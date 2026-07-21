@@ -5,7 +5,7 @@ const jwt = require('jsonwebtoken');
 const pool = require('../db');
 const authMiddleware = require('../middleware/auth');
 
-const JWT_SECRET = process.env.JWT_SECRET || 'default_jwt_secret';
+const JWT_SECRET = process.env.JWT_SECRET;
 
 // POST /api/auth/login
 router.post('/login', async (req, res) => {
@@ -52,11 +52,12 @@ router.post('/login', async (req, res) => {
 // POST /api/auth/register
 router.post('/register', async (req, res) => {
   try {
-    const { email, password, name, role } = req.body;
+    const { email, password, name } = req.body;
 
     if (!email || !password || !name) {
       return res.status(400).json({ error: 'Email, password, and name are required' });
     }
+    if (password.length < 12) return res.status(400).json({ error: 'Password must be at least 12 characters' });
 
     const existing = await pool.query('SELECT id FROM users WHERE email = $1', [email]);
     if (existing.rows.length > 0) {
@@ -68,7 +69,7 @@ router.post('/register', async (req, res) => {
 
     const result = await pool.query(
       'INSERT INTO users (email, password_hash, name, role) VALUES ($1, $2, $3, $4) RETURNING id, email, name, role, created_at',
-      [email, password_hash, name, role || 'member']
+      [email, password_hash, name, 'member']
     );
 
     const user = result.rows[0];

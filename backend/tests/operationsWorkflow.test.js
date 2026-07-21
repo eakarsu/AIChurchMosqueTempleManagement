@@ -1,0 +1,6 @@
+'use strict';const test=require('node:test');const assert=require('node:assert/strict');const {validateProgram,transition}=require('../domain/operationsWorkflow');
+const valid=()=>({name:'Youth service project',facilityId:'hall-a',startsAt:'2026-08-01T10:00:00Z',endsAt:'2026-08-01T12:00:00Z',includesMinors:true,volunteers:[{id:'v-1',backgroundCheckStatus:'cleared'}],consentBasis:'guardian opt-in'});
+test('blocks uncleared volunteer from minors program',()=>assert.throws(()=>validateProgram({...valid(),volunteers:[{id:'v-1',backgroundCheckStatus:'pending'}]}),/cleared/));
+test('requires communication consent basis',()=>assert.throws(()=>validateProgram({...valid(),consentBasis:null}),/consentBasis/));
+test('approval requires separated role and evidence',()=>{const p=validateProgram(valid());assert.throws(()=>transition('submitted','approved','program_lead',p,'review completed'),/approval/);assert.equal(transition('submitted','approved','safeguarding_lead',p,'checks and schedule reviewed'),'approved');});
+test('rejects invalid schedule interval',()=>assert.throws(()=>transition('approved','scheduled','administrator',{...validateProgram(valid()),endsAt:'2026-08-01T09:00:00Z'},'ok'),/end/));

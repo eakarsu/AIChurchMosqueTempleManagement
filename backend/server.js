@@ -1,5 +1,6 @@
 const path = require('path');
 require('dotenv').config({ path: path.join(__dirname, '../.env') });
+require('./config/runtime').validateRuntime();
 
 const express = require('express');
 const cors = require('cors');
@@ -61,6 +62,7 @@ app.use('/api/webhooks', require('./routes/webhooks'));
 
 // Custom Views (Faith Views) — 2 viz + 2 non-viz endpoints (mounted before 404 handler)
 app.use('/api/custom-views', require('./routes/customViews'));
+app.use('/api/governed-programs', require('./routes/governedPrograms'));
 
 // Error handling middleware
 app.use((err, req, res, next) => {
@@ -88,17 +90,3 @@ app.listen(PORT, () => {
 });
 
 module.exports = app;
-
-
-// === Batch 01 Gaps & Frontend Mounts ===
-app.use('/api/gap-no-ai-sermon-transcription-clip-generation-for-soc', require('./routes/gap_no_ai_sermon_transcription_clip_generation_for_soc'));
-app.use('/api/gap-no-ai-live-translation-for-multilingual-congregati', require('./routes/gap_no_ai_live_translation_for_multilingual_congregati'));
-app.use('/api/gap-no-ai-giving-pattern-fraud-anomaly-detection', require('./routes/gap_no_ai_giving_pattern_fraud_anomaly_detection'));
-app.use('/api/gap-no-ai-prayer-request-triage-and-routing', require('./routes/gap_no_ai_prayer_request_triage_and_routing'));
-app.use('/api/gap-no-ai-personalized-devotional-content-generation', require('./routes/gap_no_ai_personalized_devotional_content_generation'));
-app.use('/api/gap-notification-routes-exist-but-no-sms-push-delivery', require('./routes/gap_notification_routes_exist_but_no_sms_push_delivery'));
-app.use('/api/gap-no-export-reporting-for-tax-receipt-generation', require('./routes/gap_no_export_reporting_for_tax_receipt_generation'));
-app.use('/api/gap-no-direct-chms-api-client-planning-center-church-c', require('./routes/gap_no_direct_chms_api_client_planning_center_church_c'));
-app.use('/api/gap-no-livestream-giving-page-integration', require('./routes/gap_no_livestream_giving_page_integration'));
-app.use('/api/gap-no-mobile-app-for-members', require('./routes/gap_no_mobile_app_for_members'));
-app.use('/api/gap-no-shift-swap-workflow-on-volunteer-scheduling', require('./routes/gap_no_shift_swap_workflow_on_volunteer_scheduling'));
