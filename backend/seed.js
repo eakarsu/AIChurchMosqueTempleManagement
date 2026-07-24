@@ -12,6 +12,12 @@ const pool = new Pool({
   database: process.env.DB_NAME || 'temple_management',
 });
 
+function requireDemoPassword() {
+  const password = process.env.DEMO_PASSWORD || process.env.SEED_DEMO_PASSWORD || process.env.DEMO_SEED_PASSWORD || '';
+  if (password.length < 12 || password.length > 1024) throw new Error('DEMO_PASSWORD must contain 12-1024 characters');
+  return password;
+}
+
 async function seed() {
   const client = await pool.connect();
 
@@ -193,7 +199,7 @@ async function seed() {
 
     // Seed users
     const salt = await bcrypt.genSalt(10);
-    const passwordHash = await bcrypt.hash('password123', salt);
+    const passwordHash = await bcrypt.hash(requireDemoPassword(), salt);
     await client.query(
       `INSERT INTO users (email, password_hash, name, role) VALUES ($1, $2, $3, $4)`,
       ['admin@temple.org', passwordHash, 'Admin User', 'admin']
