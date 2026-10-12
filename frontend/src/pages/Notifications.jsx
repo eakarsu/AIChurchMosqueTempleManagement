@@ -1,8 +1,12 @@
+import Modal from '../components/AIWorkspaceModal';
+import AIReport from '../components/AIReport';
+import {nativeFetch,nativeList} from '../components/useNativeTransport';
 import React, { useState, useEffect } from 'react';
 import { Bell, Plus, Check, Trash2 } from 'lucide-react';
 
 function Notifications() {
   const [items, setItems] = useState([]);
+  const [selected,setSelected]=useState(null),[deleting,setDeleting]=useState(false),[editingId,setEditingId]=useState(null);
   const [unread, setUnread] = useState(0);
   const [loading, setLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
@@ -18,16 +22,16 @@ function Notifications() {
     setLoading(true);
     setError(null);
     try {
-      const res = await fetch('/api/notifications', { headers });
+      const res = await nativeFetch('/api/notifications', { headers });
       const data = await res.json();
-      setItems(Array.isArray(data) ? data : (data.notifications || data.items || []));
+      setItems(nativeList(data));
       try {
-        const c = await fetch('/api/notifications/unread-count', { headers });
+        const c = await nativeFetch('/api/notifications/unread-count', { headers });
         const cd = await c.json();
         setUnread(cd.count || cd.unread || 0);
       } catch (_) {}
     } catch (e) {
-      setError('Failed to fetch notifications');
+      setError(e.message||'Failed to fetch notifications');
     }
     setLoading(false);
   };
@@ -35,27 +39,28 @@ function Notifications() {
   const handleCreate = async (e) => {
     e.preventDefault();
     try {
-      const res = await fetch('/api/notifications', { method: 'POST', headers, body: JSON.stringify(form) });
+      const res = await nativeFetch(editingId?'/api/notifications/'+editingId:'/api/notifications', { method: editingId?'PUT':'POST', headers, body: JSON.stringify(form) });
       if (!res.ok) throw new Error('Save failed');
-      setShowForm(false);
+      setShowForm(false);setEditingId(null);setSelected(null);
       setForm({ title: '', message: '', type: 'info', user_id: '' });
       load();
     } catch (e) { setError(e.message); }
   };
 
   const markRead = async (id) => {
-    try { await fetch(`/api/notifications/${id}/read`, { method: 'PUT', headers }); load(); } catch (e) { setError(e.message); }
+    try { await nativeFetch(`/api/notifications/${id}/read`, { method: 'PUT', headers }); load(); } catch (e) { setError(e.message); }
   };
 
   const markAllRead = async () => {
-    try { await fetch('/api/notifications/mark-all-read', { method: 'POST', headers }); load(); } catch (e) { setError(e.message); }
+    try { await nativeFetch('/api/notifications/mark-all-read', { method: 'POST', headers }); load(); } catch (e) { setError(e.message); }
   };
 
   const remove = async (id) => {
-    if (!window.confirm('Delete?')) return;
-    try { await fetch(`/api/notifications/${id}`, { method: 'DELETE', headers }); load(); } catch (e) { setError(e.message); }
+
+    try { await nativeFetch(`/api/notifications/${id}`, { method: 'DELETE', headers }); setSelected(null);load(); } catch (e) { setError(e.message); }
   };
 
+  if(error)return <section role="alert" className="page-container"><h1>Saved notifications could not be loaded</h1><p>{error}</p><button className="btn btn-secondary" onClick={load}>Retry</button></section>;
   return (
     <div className="page-container">
       <div className="page-header">
@@ -65,7 +70,7 @@ function Notifications() {
         </div>
         <div style={{ display: 'flex', gap: '8px' }}>
           <button className="btn btn-secondary" onClick={markAllRead}><Check size={16} /> Mark all read</button>
-          <button className="btn btn-primary" onClick={() => setShowForm(true)}><Plus size={16} /> New</button>
+          <button className="btn btn-primary" onClick={() => {setEditingId(null);setSelected(null);setForm({title:'',message:'',type:'info',user_id:''});setShowForm(true);}}><Plus size={16} /> New</button>
         </div>
       </div>
 
@@ -80,14 +85,14 @@ function Notifications() {
             <tbody>
               {items.map(n => (
                 <tr key={n.id}>
-                  <td><strong>{n.title}</strong></td>
+                  <td><button type="button" className="btn btn-secondary" onClick={()=>{setSelected(n);setDeleting(false);}}>{n.title||"Notification #"+n.id}</button></td>
                   <td>{n.message}</td>
                   <td><span className="badge">{n.type || 'info'}</span></td>
                   <td>{n.read || n.is_read ? 'read' : 'unread'}</td>
                   <td>{n.created_at ? new Date(n.created_at).toLocaleString() : '-'}</td>
                   <td>
                     {!(n.read || n.is_read) && <button className="btn-icon" onClick={() => markRead(n.id)}><Check size={14} /></button>}
-                    <button className="btn-icon" onClick={() => remove(n.id)}><Trash2 size={14} /></button>
+                    <button className="btn-icon" onClick={()=>{setSelected(n);setDeleting(true);}}><Trash2 size={14} /></button>
                   </td>
                 </tr>
               ))}
@@ -97,10 +102,11 @@ function Notifications() {
         </div>
       )}
 
+      {selected&&!showForm&&<Modal title={deleting?"Delete saved record?":"Saved notifications details"} onClose={()=>setSelected(null)} footer={<><button className="btn btn-secondary" onClick={()=>setSelected(null)}>Cancel</button>{!deleting&&<button className="btn btn-primary" onClick={()=>{setForm({title:selected.title||'',message:selected.message||'',type:selected.type||'info',user_id:''});setEditingId(selected.id);setShowForm(true);}}>Edit</button>}<button className="btn btn-danger" onClick={()=>deleting?remove(selected.id):setDeleting(true)}>{deleting?"Confirm delete":"Delete"}</button></>}>{deleting?<p>Delete this saved local record? No external message or delivery is created.</p>:<AIReport response={selected} title="Saved local source"/>}</Modal>}
       {showForm && (
         <div className="modal-overlay" onClick={() => setShowForm(false)}>
           <div className="modal" onClick={e => e.stopPropagation()}>
-            <h2>New Notification</h2>
+            <h2>{editingId?'Edit Notification':'New Notification'}</h2>
             <form onSubmit={handleCreate}>
               <div className="form-group">
                 <label>Title</label>
@@ -125,7 +131,7 @@ function Notifications() {
               </div>
               <div className="form-actions">
                 <button type="button" className="btn btn-secondary" onClick={() => setShowForm(false)}>Cancel</button>
-                <button type="submit" className="btn btn-primary">Create</button>
+                <button type="submit" className="btn btn-primary">{editingId?'Save changes':'Create'}</button>
               </div>
             </form>
           </div>

@@ -23,7 +23,7 @@ router.get('/', auth, async (req, res) => {
     }
 
     const dataParams = [...params, limit, offset];
-    const dataQuery = `SELECT id, feature, input, output, model, created_at
+    const dataQuery = `SELECT id, feature, input, output, model, created_at, review_notes
                        FROM ai_results ${where}
                        ORDER BY created_at DESC
                        LIMIT $${params.length + 1} OFFSET $${params.length + 2}`;
@@ -65,6 +65,9 @@ router.get('/:id', auth, async (req, res) => {
     res.status(500).json({ error: err.message });
   }
 });
+
+// Owner review notes preserve the original native inputs and provider answer.
+router.patch('/:id', auth, async(req,res)=>{try{await ensureAIResultsTable(pool);if(typeof req.body.review_notes!=='string'||req.body.review_notes.length>10000||Object.keys(req.body).some(key=>key!=='review_notes'))return res.status(400).json({error:'Only owner review notes may be edited.'});const q=await pool.query('UPDATE ai_results SET review_notes=$1 WHERE id=$2 AND user_id=$3 RETURNING *',[req.body.review_notes,req.params.id,req.user.id]);if(!q.rows.length)return res.status(404).json({error:'Not found'});res.json(q.rows[0]);}catch(error){res.status(500).json({error:error.message});}});
 
 // DELETE /api/ai-results/:id
 router.delete('/:id', auth, async (req, res) => {

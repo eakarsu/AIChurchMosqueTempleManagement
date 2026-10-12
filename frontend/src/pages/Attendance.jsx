@@ -1,3 +1,6 @@
+import useNativeTransport, { nativeList } from '../components/useNativeTransport';
+import AIWorkspaceModal from '../components/AIWorkspaceModal';
+import '../components/AIWorkspace.css';
 import React, { useState, useEffect } from 'react';
 import { Search, Plus, BarChart3, Sparkles, TrendingUp, Users, Eye } from 'lucide-react';
 import DetailModal from '../components/DetailModal';
@@ -10,6 +13,8 @@ const emptyRecord = {
 };
 
 function Attendance() {
+  const {request,cancel:cancelAI,busy:requestBusy,reviewDialog}=useNativeTransport();
+  const [loadError,setLoadError]=useState('');
   const [records, setRecords] = useState([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
@@ -34,12 +39,12 @@ function Attendance() {
   };
 
   const fetchRecords = async () => {
-    setLoading(true);
+    setLoading(true);setLoadError('');
     try {
-      const res = await fetch('/api/attendance', { headers });
+      const res = await request('/api/attendance', { headers });
       const data = await res.json();
-      setRecords(Array.isArray(data) ? data : (data.data || []));
-    } catch { showToast('Failed to fetch records', 'error'); }
+      setRecords(nativeList(data));
+    } catch (failure) { setLoadError(failure.message || 'Saved data could not be loaded.');  }
     setLoading(false);
   };
 
@@ -55,18 +60,18 @@ function Attendance() {
     try {
       const url = editingId ? `/api/attendance/${editingId}` : '/api/attendance';
       const method = editingId ? 'PUT' : 'POST';
-      const res = await fetch(url, { method, headers, body: JSON.stringify(body) });
+      const res = await request(url, { method, headers, body: JSON.stringify(body) });
       if (!res.ok) throw new Error('Failed');
       showToast(editingId ? 'Record updated!' : 'Record created!');
       setShowForm(false); setEditingId(null); setFormData(emptyRecord); fetchRecords();
-    } catch { showToast('Failed to save', 'error'); }
+    } catch (failure) { if(failure.name==='AbortError'){setAiLoading(false);return;} showToast('Failed to save', 'error'); }
   };
 
   const handleDelete = async (id) => {
     try {
-      await fetch(`/api/attendance/${id}`, { method: 'DELETE', headers });
+      await request(`/api/attendance/${id}`, { method: 'DELETE', headers });
       showToast('Record deleted'); setShowDetail(false); setSelected(null); fetchRecords();
-    } catch { showToast('Failed to delete', 'error'); }
+    } catch (failure) { if(failure.name==='AbortError'){setAiLoading(false);return;} showToast('Failed to delete', 'error'); }
   };
 
   const handleEdit = (rec) => {
@@ -87,11 +92,11 @@ function Attendance() {
   const handleAiInsights = async () => {
     setAiLoading(true); setAiTitle('AI Attendance Insights'); setAiResponse('');
     try {
-      const res = await fetch('/api/attendance/ai-insights', { method: 'POST', headers,
+      const res = await request('/api/attendance/ai-insights', { method: 'POST', headers,
         body: JSON.stringify({ records: records.slice(0, 20) }) });
       const data = await res.json();
       setAiResponse(data.insights || data.response || data.result || JSON.stringify(data));
-    } catch { setAiResponse('Failed to generate insights.'); }
+    } catch (failure) { if(failure.name==='AbortError'){setAiLoading(false);return;} setAiResponse('Failed to generate insights.'); }
     setAiLoading(false);
   };
 
@@ -109,8 +114,12 @@ function Attendance() {
 
   if (loading) return <div className="loading-container"><div className="loading-spinner lg" /><p>Loading attendance...</p></div>;
 
+  if(loadError)return <section role="alert" className="page-container"><h1>Saved attendance could not be loaded</h1><p>{loadError}</p><button type="button" className="btn btn-secondary" onClick={fetchRecords}>Retry</button></section>;
+
   return (
     <div>
+      {reviewDialog}
+      {requestBusy&&<p role="status">Generating with OpenRouter… <button type="button" className="btn btn-secondary" onClick={cancelAI}>Cancel AI request</button></p>}
       <div className="page-header">
         <div><h1>Attendance Tracking</h1><p>Monitor service attendance and engagement</p></div>
         <div className="page-header-actions">
@@ -128,7 +137,7 @@ function Attendance() {
 
       <div className="search-bar"><div className="search-wrapper"><Search size={18} /><input placeholder="Search records..." value={search} onChange={(e) => setSearch(e.target.value)} /></div></div>
 
-      <AIResponseDisplay response={aiResponse} title={aiTitle} isLoading={aiLoading} />
+      <AIResponseDisplay response={aiResponse} title={aiTitle} isLoading={aiLoading&&!reviewDialog} />
 
       {filtered.length === 0 ? (
         <div className="empty-state"><BarChart3 size={48} /><p>No attendance records found.</p></div>
@@ -155,7 +164,7 @@ function Attendance() {
 
       {showDetail && selected && (
         <DetailModal isOpen={showDetail} onClose={() => { setShowDetail(false); setSelected(null); }} title={selected.service_name} onEdit={() => handleEdit(selected)} onDelete={() => handleDelete(selected.id)}>
-          <div className="detail-view">
+
             <div className="detail-row">
               <div className="detail-field"><span className="field-label">Service Date</span><span className="field-value">{selected.service_date ? new Date(selected.service_date).toLocaleDateString() : '-'}</span></div>
               <div className="detail-field"><span className="field-label">Service Type</span><span className="field-value">{typeLabel(selected.service_type)}</span></div>
@@ -172,7 +181,7 @@ function Attendance() {
               <div className="detail-field"><span className="field-label">Weather</span><span className="field-value">{selected.weather || '-'}</span></div>
             </div>
             <div className="detail-field"><span className="field-label">Notes</span><span className="field-value">{selected.notes || '-'}</span></div>
-          </div>
+
         </DetailModal>
       )}
 

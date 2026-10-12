@@ -1,3 +1,4 @@
+const {saveAIResult,DEFAULT_MODEL}=require('../lib/aiHelpers');
 const express = require('express');
 const router = express.Router();
 const pool = require('../db');
@@ -120,8 +121,9 @@ router.post('/:id/ai-guidance', async (req, res) => {
 - Request: ${prayer.prayer_text}`;
 
     const guidance = await askAI(prompt, systemPrompt);
+    await saveAIResult(pool,{user_id:req.user.id,feature:'native-prayers-guidance',input:{...req.body,...req.params},output:{guidance},raw_text:guidance,model:DEFAULT_MODEL,nativeWrite:client=>client.query('UPDATE prayers SET ai_guidance=$1,updated_at=NOW() WHERE id=$2',[guidance,id])});
 
-    await pool.query('UPDATE prayers SET ai_guidance = $1, updated_at = NOW() WHERE id = $2', [guidance, id]);
+
 
     res.json({ guidance });
   } catch (err) {

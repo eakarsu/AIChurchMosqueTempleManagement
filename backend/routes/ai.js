@@ -13,13 +13,20 @@ router.use(aiRateLimiter);
  * Helper: run AI prompt, parse JSON, persist to ai_results, send response.
  */
 async function runAIFeature(req, res, { feature, systemPrompt, userPrompt, extra = {} }) {
+  const id=req.body.report_id;
+  if(id!==undefined){
+    if(!/^[1-9]\d*$/.test(String(id)))return res.status(400).json({error:'Invalid saved report.'});
+    const owned=await pool.query('SELECT id FROM ai_results WHERE id=$1 AND user_id=$2 AND feature=$3',[id,req.user.id,feature]);
+    if(!owned.rows.length)return res.status(404).json({error:'Saved report not found or access denied.'});
+  }
   const data = await callOpenRouter(systemPrompt, userPrompt);
   const rawText = data.choices?.[0]?.message?.content || '';
   const parsed = parseAIJson(rawText) || { raw_analysis: rawText };
 
   const output = { ...extra, ...parsed };
 
-  await saveAIResult(pool, {
+  const saved = await saveAIResult(pool, {
+    id,
     user_id: req.user?.id,
     feature,
     input: req.body,
@@ -28,7 +35,7 @@ async function runAIFeature(req, res, { feature, systemPrompt, userPrompt, extra
     model: data.model || DEFAULT_MODEL,
   });
 
-  res.json(output);
+  if(!res.destroyed)res.json({...output,id:saved.id,model:data.model||DEFAULT_MODEL});
 }
 
 /**

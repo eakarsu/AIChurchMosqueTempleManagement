@@ -168,15 +168,16 @@ router.post('/:id/generate-receipt', async (req, res) => {
       return res.status(404).json({ error: 'Donation not found' });
     }
 
-    const receiptNumber = `TR-${Date.now()}-${id}`;
+    const receiptNumber = donation.rows[0].tax_receipt_number || `TR-${Date.now()}-${id}`;
 
     const result = await pool.query(
-      'UPDATE donations SET tax_receipt_sent = true, tax_receipt_number = $1 WHERE id = $2 RETURNING *',
+      'UPDATE donations SET tax_receipt_number = $1 WHERE id = $2 RETURNING *',
       [receiptNumber, id]
     );
 
     res.json({
-      message: 'Tax receipt generated successfully',
+      message: 'Tax receipt draft prepared. Delivery status remains unchanged.',
+      receipt: {receipt_number:receiptNumber,donor_name:result.rows[0].donor_name,amount:result.rows[0].amount,date:result.rows[0].date,category:result.rows[0].category,status:'Owner draft for review; no delivery claimed.'},
       receipt_number: receiptNumber,
       donation: result.rows[0],
     });

@@ -181,7 +181,7 @@ router.post('/ai-engagement', async (req, res) => {
     await saveAIResult(pool, {
       user_id: req.user?.id,
       feature: 'member-engagement-suggestions',
-      input: { has_member_data: !!member_data },
+      input: { ...req.body },
       output: { suggestions },
       raw_text: suggestions,
       model: DEFAULT_MODEL,

@@ -1,3 +1,6 @@
+import useNativeTransport, { nativeList } from '../components/useNativeTransport';
+import AIWorkspaceModal from '../components/AIWorkspaceModal';
+import '../components/AIWorkspace.css';
 import React, { useState, useEffect } from 'react';
 import { Search, Plus, Building, Sparkles } from 'lucide-react';
 import DetailModal from '../components/DetailModal';
@@ -10,6 +13,8 @@ const emptyFacility = {
 };
 
 function Facilities() {
+  const {request,cancel:cancelAI,busy:requestBusy,reviewDialog}=useNativeTransport();
+  const [loadError,setLoadError]=useState('');
   const [facilities, setFacilities] = useState([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
@@ -34,14 +39,14 @@ function Facilities() {
   };
 
   const fetchFacilities = async () => {
-    setLoading(true);
+    setLoading(true);setLoadError('');
     try {
-      const res = await fetch('/api/facilities', { headers });
+      const res = await request('/api/facilities', { headers });
       const data = await res.json();
-      const list = Array.isArray(data) ? data : (data.facilities || data.data || []);
+      const list = nativeList(data);
       setFacilities(list);
-    } catch {
-      showToast('Failed to fetch facilities', 'error');
+    } catch (failure) { setLoadError(failure.message || 'Saved data could not be loaded.');
+
     }
     setLoading(false);
   };
@@ -57,26 +62,26 @@ function Facilities() {
     try {
       const url = editingId ? `/api/facilities/${editingId}` : '/api/facilities';
       const method = editingId ? 'PUT' : 'POST';
-      const res = await fetch(url, { method, headers, body: JSON.stringify(body) });
+      const res = await request(url, { method, headers, body: JSON.stringify(body) });
       if (!res.ok) throw new Error('Failed to save');
       showToast(editingId ? 'Facility updated!' : 'Facility added!');
       setShowForm(false);
       setEditingId(null);
       setFormData(emptyFacility);
       fetchFacilities();
-    } catch {
+    } catch (failure) { if(failure.name==='AbortError'){setAiLoading(false);return;}
       showToast('Failed to save facility', 'error');
     }
   };
 
   const handleDelete = async (id) => {
     try {
-      await fetch(`/api/facilities/${id}`, { method: 'DELETE', headers });
+      await request(`/api/facilities/${id}`, { method: 'DELETE', headers });
       showToast('Facility deleted');
       setShowDetail(false);
       setSelected(null);
       fetchFacilities();
-    } catch {
+    } catch (failure) { if(failure.name==='AbortError'){setAiLoading(false);return;}
       showToast('Failed to delete', 'error');
     }
   };
@@ -104,12 +109,12 @@ function Facilities() {
     setAiTitle('AI Schedule Optimization');
     setAiResponse('');
     try {
-      const res = await fetch('/api/facilities/ai-optimize', {
-        method: 'POST', headers,
+      const res = await request('/api/facilities/ai-optimize', {
+        method: 'POST', headers,body:JSON.stringify({facility_data:facilities}),
       });
       const data = await res.json();
       setAiResponse(data.optimization || data.suggestions || data.response || data.message || data.result || JSON.stringify(data));
-    } catch {
+    } catch (failure) { if(failure.name==='AbortError'){setAiLoading(false);return;}
       setAiResponse('Failed to generate optimization. Please try again.');
     }
     setAiLoading(false);
@@ -128,8 +133,12 @@ function Facilities() {
 
   if (loading) return <div className="loading-container"><div className="loading-spinner lg" /><p>Loading facilities...</p></div>;
 
+  if(loadError)return <section role="alert" className="page-container"><h1>Saved facilities could not be loaded</h1><p>{loadError}</p><button type="button" className="btn btn-secondary" onClick={fetchFacilities}>Retry</button></section>;
+
   return (
     <div>
+      {reviewDialog}
+      {requestBusy&&<p role="status">Generating with OpenRouter… <button type="button" className="btn btn-secondary" onClick={cancelAI}>Cancel AI request</button></p>}
       <div className="page-header">
         <div>
           <h1>Facility Management</h1>
@@ -152,7 +161,7 @@ function Facilities() {
         </div>
       </div>
 
-      <AIResponseDisplay response={aiResponse} title={aiTitle} isLoading={aiLoading} />
+      <AIResponseDisplay response={aiResponse} title={aiTitle} isLoading={aiLoading&&!reviewDialog} />
 
       {filtered.length === 0 ? (
         <div className="empty-state">
@@ -197,7 +206,7 @@ function Facilities() {
           onEdit={() => handleEdit(selected)}
           onDelete={() => handleDelete(selected._id || selected.id)}
         >
-          <div className="detail-view">
+
             <div className="detail-row">
               <div className="detail-field">
                 <span className="field-label">Name</span>
@@ -250,7 +259,7 @@ function Facilities() {
               <span className="field-label">Notes</span>
               <span className="field-value">{selected.notes || '-'}</span>
             </div>
-          </div>
+
         </DetailModal>
       )}
 

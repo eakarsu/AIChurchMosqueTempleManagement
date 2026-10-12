@@ -1,3 +1,6 @@
+import useNativeTransport, { nativeList } from '../components/useNativeTransport';
+import AIWorkspaceModal from '../components/AIWorkspaceModal';
+import '../components/AIWorkspace.css';
 import React, { useState, useEffect } from 'react';
 import { Search, Plus, Calendar, Sparkles } from 'lucide-react';
 import DetailModal from '../components/DetailModal';
@@ -10,6 +13,8 @@ const emptyEvent = {
 };
 
 function Events() {
+  const {request,cancel:cancelAI,busy:requestBusy,reviewDialog}=useNativeTransport();
+  const [loadError,setLoadError]=useState('');
   const [events, setEvents] = useState([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
@@ -36,14 +41,14 @@ function Events() {
   };
 
   const fetchEvents = async () => {
-    setLoading(true);
+    setLoading(true);setLoadError('');
     try {
-      const res = await fetch('/api/events', { headers });
+      const res = await request('/api/events', { headers });
       const data = await res.json();
-      const list = Array.isArray(data) ? data : (data.events || data.data || []);
+      const list = nativeList(data);
       setEvents(list);
-    } catch {
-      showToast('Failed to fetch events', 'error');
+    } catch (failure) { setLoadError(failure.message || 'Saved data could not be loaded.');
+
     }
     setLoading(false);
   };
@@ -54,26 +59,26 @@ function Events() {
     try {
       const url = editingId ? `/api/events/${editingId}` : '/api/events';
       const method = editingId ? 'PUT' : 'POST';
-      const res = await fetch(url, { method, headers, body: JSON.stringify(body) });
+      const res = await request(url, { method, headers, body: JSON.stringify(body) });
       if (!res.ok) throw new Error('Failed to save');
       showToast(editingId ? 'Event updated!' : 'Event created!');
       setShowForm(false);
       setEditingId(null);
       setFormData(emptyEvent);
       fetchEvents();
-    } catch {
+    } catch (failure) { if(failure.name==='AbortError'){setAiLoading(false);return;}
       showToast('Failed to save event', 'error');
     }
   };
 
   const handleDelete = async (id) => {
     try {
-      await fetch(`/api/events/${id}`, { method: 'DELETE', headers });
+      await request(`/api/events/${id}`, { method: 'DELETE', headers });
       showToast('Event deleted');
       setShowDetail(false);
       setSelected(null);
       fetchEvents();
-    } catch {
+    } catch (failure) { if(failure.name==='AbortError'){setAiLoading(false);return;}
       showToast('Failed to delete', 'error');
     }
   };
@@ -101,9 +106,9 @@ function Events() {
     setAiTitle('AI Generated Description');
     setAiResponse('');
     try {
-      const res = await fetch('/api/events/ai-generate-description', {
+      const res = await request('/api/events/ai-generate-description', {
         method: 'POST', headers,
-        body: JSON.stringify({ title: formData.title, category: formData.category }),
+        body: JSON.stringify({ title: formData.title, category: formData.category, date: formData.event_date, location: formData.location, audience: 'Unknown — verify intended audience.' }),
       });
       const data = await res.json();
       const desc = data.description || data.response || data.message || data.result || '';
@@ -111,7 +116,7 @@ function Events() {
       if (desc && typeof desc === 'string') {
         setFormData(prev => ({ ...prev, description: desc }));
       }
-    } catch {
+    } catch (failure) { if(failure.name==='AbortError'){setAiLoading(false);return;}
       setAiResponse('Failed to generate description. Please try again.');
     }
     setAiLoading(false);
@@ -134,8 +139,12 @@ function Events() {
 
   if (loading) return <div className="loading-container"><div className="loading-spinner lg" /><p>Loading events...</p></div>;
 
+  if(loadError)return <section role="alert" className="page-container"><h1>Saved events could not be loaded</h1><p>{loadError}</p><button type="button" className="btn btn-secondary" onClick={fetchEvents}>Retry</button></section>;
+
   return (
     <div>
+      {reviewDialog}
+      {requestBusy&&<p role="status">Generating with OpenRouter… <button type="button" className="btn btn-secondary" onClick={cancelAI}>Cancel AI request</button></p>}
       <div className="page-header">
         <div>
           <h1>Event Coordination</h1>
@@ -174,7 +183,7 @@ function Events() {
         </select>
       </div>
 
-      <AIResponseDisplay response={aiResponse} title={aiTitle} isLoading={aiLoading} />
+      <AIResponseDisplay response={aiResponse} title={aiTitle} isLoading={aiLoading&&!reviewDialog} />
 
       {filtered.length === 0 ? (
         <div className="empty-state">
@@ -218,7 +227,7 @@ function Events() {
           onEdit={() => handleEdit(selected)}
           onDelete={() => handleDelete(selected._id || selected.id)}
         >
-          <div className="detail-view">
+
             <div className="detail-row">
               <div className="detail-field">
                 <span className="field-label">Event Date</span>
@@ -263,7 +272,7 @@ function Events() {
               <span className="field-label">Description</span>
               <span className="field-value">{selected.description || '-'}</span>
             </div>
-          </div>
+
         </DetailModal>
       )}
 
@@ -337,7 +346,7 @@ function Events() {
                   </div>
                   <textarea className="form-textarea" value={formData.description} onChange={(e) => updateField('description', e.target.value)} rows={4} />
                 </div>
-                <AIResponseDisplay response={aiResponse} title={aiTitle} isLoading={aiLoading} />
+                <AIResponseDisplay response={aiResponse} title={aiTitle} isLoading={aiLoading&&!reviewDialog} />
                 <div className="modal-footer" style={{ padding: 0, border: 'none', marginTop: 16 }}>
                   <button type="button" className="btn btn-secondary" onClick={() => { setShowForm(false); setEditingId(null); }}>Cancel</button>
                   <button type="submit" className="btn btn-primary">{editingId ? 'Update' : 'Create'} Event</button>

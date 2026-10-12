@@ -1,3 +1,4 @@
+import {nativeFetch} from '../components/useNativeTransport';
 import React, { useState, useEffect } from 'react';
 import { BarChart3, Download, RefreshCw } from 'lucide-react';
 
@@ -15,7 +16,7 @@ function Reports() {
     setLoading(true);
     setError(null);
     try {
-      const res = await fetch('/api/reports/summary', { headers });
+      const res = await nativeFetch('/api/reports/summary', { headers });
       const data = await res.json();
       setSummary(data);
     } catch (e) { setError('Failed to load summary'); }
@@ -23,7 +24,7 @@ function Reports() {
   };
 
   const downloadCsv = (resource) => {
-    fetch(`/api/reports/${resource}.csv`, { headers })
+    nativeFetch(`/api/reports/${resource}.csv`, { headers })
       .then(r => r.blob())
       .then(blob => {
         const url = window.URL.createObjectURL(blob);
@@ -37,6 +38,7 @@ function Reports() {
 
   const csvs = ['donations', 'members', 'events', 'attendance'];
 
+  if(error)return <section role="alert" className="page-container"><h1>Reports could not be loaded</h1><p>{error}</p><button className="btn btn-secondary" onClick={load}>Retry</button></section>;
   return (
     <div className="page-container">
       <div className="page-header">

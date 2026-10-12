@@ -1,3 +1,6 @@
+import useNativeTransport, { nativeList } from '../components/useNativeTransport';
+import AIWorkspaceModal from '../components/AIWorkspaceModal';
+import '../components/AIWorkspace.css';
 import React, { useState, useEffect } from 'react';
 import { Search, Plus, Heart, Sparkles } from 'lucide-react';
 import DetailModal from '../components/DetailModal';
@@ -10,6 +13,8 @@ const emptyVolunteer = {
 };
 
 function Volunteers() {
+  const {request,cancel:cancelAI,busy:requestBusy,reviewDialog}=useNativeTransport();
+  const [loadError,setLoadError]=useState('');
   const [volunteers, setVolunteers] = useState([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
@@ -34,14 +39,14 @@ function Volunteers() {
   };
 
   const fetchVolunteers = async () => {
-    setLoading(true);
+    setLoading(true);setLoadError('');
     try {
-      const res = await fetch('/api/volunteers', { headers });
+      const res = await request('/api/volunteers', { headers });
       const data = await res.json();
-      const list = Array.isArray(data) ? data : (data.volunteers || data.data || []);
+      const list = nativeList(data);
       setVolunteers(list);
-    } catch {
-      showToast('Failed to fetch volunteers', 'error');
+    } catch (failure) { setLoadError(failure.message || 'Saved data could not be loaded.');
+
     }
     setLoading(false);
   };
@@ -56,26 +61,26 @@ function Volunteers() {
     try {
       const url = editingId ? `/api/volunteers/${editingId}` : '/api/volunteers';
       const method = editingId ? 'PUT' : 'POST';
-      const res = await fetch(url, { method, headers, body: JSON.stringify(body) });
+      const res = await request(url, { method, headers, body: JSON.stringify(body) });
       if (!res.ok) throw new Error('Failed to save');
       showToast(editingId ? 'Volunteer updated!' : 'Volunteer added!');
       setShowForm(false);
       setEditingId(null);
       setFormData(emptyVolunteer);
       fetchVolunteers();
-    } catch {
+    } catch (failure) { if(failure.name==='AbortError'){setAiLoading(false);return;}
       showToast('Failed to save volunteer', 'error');
     }
   };
 
   const handleDelete = async (id) => {
     try {
-      await fetch(`/api/volunteers/${id}`, { method: 'DELETE', headers });
+      await request(`/api/volunteers/${id}`, { method: 'DELETE', headers });
       showToast('Volunteer deleted');
       setShowDetail(false);
       setSelected(null);
       fetchVolunteers();
-    } catch {
+    } catch (failure) { if(failure.name==='AbortError'){setAiLoading(false);return;}
       showToast('Failed to delete', 'error');
     }
   };
@@ -103,12 +108,12 @@ function Volunteers() {
     setAiTitle('AI Volunteer Matching');
     setAiResponse('');
     try {
-      const res = await fetch('/api/volunteers/ai-match', {
-        method: 'POST', headers,
+      const res = await request('/api/volunteers/ai-match', {
+        method: 'POST', headers,body:JSON.stringify({volunteer_data:volunteers}),
       });
       const data = await res.json();
       setAiResponse(data.matches || data.suggestions || data.response || data.message || data.result || JSON.stringify(data));
-    } catch {
+    } catch (failure) { if(failure.name==='AbortError'){setAiLoading(false);return;}
       setAiResponse('Failed to generate volunteer matches. Please try again.');
     }
     setAiLoading(false);
@@ -116,15 +121,21 @@ function Volunteers() {
 
   const filtered = volunteers.filter(v => {
     const s = search.toLowerCase();
-    return (v.name || '').toLowerCase().includes(s) || (v.email || '').toLowerCase().includes(s) || (v.assigned_ministry || '').toLowerCase().includes(s);
+
+
+  return (v.name || '').toLowerCase().includes(s) || (v.email || '').toLowerCase().includes(s) || (v.assigned_ministry || '').toLowerCase().includes(s);
   });
 
   const updateField = (field, value) => setFormData(prev => ({ ...prev, [field]: value }));
+
+if(loadError)return <section role="alert" className="page-container"><h1>Saved volunteers could not be loaded</h1><p>{loadError}</p><button type="button" className="btn btn-secondary" onClick={fetchVolunteers}>Retry</button></section>;
 
   if (loading) return <div className="loading-container"><div className="loading-spinner lg" /><p>Loading volunteers...</p></div>;
 
   return (
     <div>
+      {reviewDialog}
+      {requestBusy&&<p role="status">Generating with OpenRouter… <button type="button" className="btn btn-secondary" onClick={cancelAI}>Cancel AI request</button></p>}
       <div className="page-header">
         <div>
           <h1>Volunteer Scheduling</h1>
@@ -147,7 +158,7 @@ function Volunteers() {
         </div>
       </div>
 
-      <AIResponseDisplay response={aiResponse} title={aiTitle} isLoading={aiLoading} />
+      <AIResponseDisplay response={aiResponse} title={aiTitle} isLoading={aiLoading&&!reviewDialog} />
 
       {filtered.length === 0 ? (
         <div className="empty-state">
@@ -204,7 +215,7 @@ function Volunteers() {
           onEdit={() => handleEdit(selected)}
           onDelete={() => handleDelete(selected._id || selected.id)}
         >
-          <div className="detail-view">
+
             <div className="detail-row">
               <div className="detail-field">
                 <span className="field-label">Name</span>
@@ -257,7 +268,7 @@ function Volunteers() {
               <span className="field-label">Notes</span>
               <span className="field-value">{selected.notes || '-'}</span>
             </div>
-          </div>
+
         </DetailModal>
       )}
 

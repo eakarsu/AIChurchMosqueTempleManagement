@@ -1,3 +1,4 @@
+const {saveAIResult,DEFAULT_MODEL}=require('../lib/aiHelpers');
 const express = require('express');
 const router = express.Router();
 const pool = require('../db');
@@ -161,6 +162,7 @@ router.post('/ai-impact', async (req, res) => {
     let outreachData;
     if (program_id) {
       outreachData = await pool.query('SELECT * FROM outreach WHERE id = $1', [program_id]);
+      if(!outreachData.rows.length)return res.status(404).json({error:'Saved outreach program not found.'});
     } else {
       outreachData = await pool.query('SELECT * FROM outreach ORDER BY start_date DESC');
     }
@@ -169,6 +171,7 @@ router.post('/ai-impact', async (req, res) => {
     const prompt = `Here is our outreach program data:\n${JSON.stringify(outreachData.rows, null, 2)}\n\n${question || 'Please analyze our outreach programs and provide an impact assessment with suggestions for improvement, growth opportunities, and resource optimization.'}`;
 
     const analysis = await askAI(prompt, systemPrompt);
+    await saveAIResult(pool,{user_id:req.user.id,feature:'native-outreach-analysis',input:{...req.body,...req.params},output:{analysis},raw_text:analysis,model:DEFAULT_MODEL});
     res.json({ analysis });
   } catch (err) {
     console.error('Error generating outreach impact analysis:', err);

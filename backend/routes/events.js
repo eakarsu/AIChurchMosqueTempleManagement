@@ -1,3 +1,4 @@
+const {saveAIResult,DEFAULT_MODEL}=require('../lib/aiHelpers');
 const express = require('express');
 const router = express.Router();
 const pool = require('../db');
@@ -146,6 +147,7 @@ router.post('/ai-generate-description', async (req, res) => {
 - Target audience: ${audience || 'all members and community'}`;
 
     const description = await askAI(prompt, systemPrompt);
+    await saveAIResult(pool,{user_id:req.user.id,feature:'native-events-description',input:{...req.body,...req.params},output:{description},raw_text:description,model:DEFAULT_MODEL});
     res.json({ description });
   } catch (err) {
     console.error('Error generating event description:', err);

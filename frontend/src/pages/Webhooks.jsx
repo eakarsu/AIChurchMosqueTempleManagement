@@ -1,8 +1,12 @@
+import Modal from '../components/AIWorkspaceModal';
+import AIReport from '../components/AIReport';
+import {nativeFetch,nativeList} from '../components/useNativeTransport';
 import React, { useState, useEffect } from 'react';
 import { Zap, Plus, Trash2, Send } from 'lucide-react';
 
 function Webhooks() {
   const [items, setItems] = useState([]);
+  const [selected,setSelected]=useState(null),[deleting,setDeleting]=useState(false),[editingId,setEditingId]=useState(null);
   const [loading, setLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
   const [form, setForm] = useState({ name: '', url: '', events: '', active: true });
@@ -18,10 +22,10 @@ function Webhooks() {
     setLoading(true);
     setError(null);
     try {
-      const res = await fetch('/api/webhooks', { headers });
+      const res = await nativeFetch('/api/webhooks', { headers });
       const data = await res.json();
-      setItems(Array.isArray(data) ? data : (data.webhooks || data.items || []));
-    } catch (e) { setError('Failed to fetch webhooks'); }
+      setItems(nativeList(data));
+    } catch (e) { setError(e.message||'Failed to fetch webhooks'); }
     setLoading(false);
   };
 
@@ -29,28 +33,29 @@ function Webhooks() {
     e.preventDefault();
     const body = { ...form, events: form.events.split(',').map(s => s.trim()).filter(Boolean) };
     try {
-      const res = await fetch('/api/webhooks', { method: 'POST', headers, body: JSON.stringify(body) });
+      const res = await nativeFetch(editingId?'/api/webhooks/'+editingId:'/api/webhooks', { method: editingId?'PUT':'POST', headers, body: JSON.stringify(body) });
       if (!res.ok) throw new Error('Save failed');
-      setShowForm(false);
+      setShowForm(false);setEditingId(null);setSelected(null);
       setForm({ name: '', url: '', events: '', active: true });
       load();
     } catch (e) { setError(e.message); }
   };
 
   const remove = async (id) => {
-    if (!window.confirm('Delete?')) return;
-    try { await fetch(`/api/webhooks/${id}`, { method: 'DELETE', headers }); load(); } catch (e) { setError(e.message); }
+
+    try { await nativeFetch(`/api/webhooks/${id}`, { method: 'DELETE', headers }); setSelected(null);load(); } catch (e) { setError(e.message); }
   };
 
   const testDeliver = async (id) => {
     setTestResult(null);
     try {
-      const res = await fetch(`/api/webhooks/${id}/test`, { method: 'POST', headers, body: JSON.stringify({ event: 'test', payload: { hello: 'world' } }) });
+      const res = await nativeFetch(`/api/webhooks/${id}/test`, { method: 'POST', headers, body: JSON.stringify({ event: 'test', payload: { hello: 'world' } }) });
       const data = await res.json();
       setTestResult({ id, ok: res.ok, data });
     } catch (e) { setTestResult({ id, ok: false, data: { error: e.message } }); }
   };
 
+  if(error)return <section role="alert" className="page-container"><h1>Saved webhooks could not be loaded</h1><p>{error}</p><button className="btn btn-secondary" onClick={load}>Retry</button></section>;
   return (
     <div className="page-container">
       <div className="page-header">
@@ -58,7 +63,7 @@ function Webhooks() {
           <h1 className="page-title"><Zap size={24} /> Webhooks</h1>
           <p className="page-subtitle">Outbound webhook registry</p>
         </div>
-        <button className="btn btn-primary" onClick={() => setShowForm(true)}><Plus size={16} /> New</button>
+        <button className="btn btn-primary" onClick={() => {setEditingId(null);setSelected(null);setForm({name:'',url:'',events:'',active:false});setShowForm(true);}}><Plus size={16} /> New</button>
       </div>
 
       {error && <div className="alert alert-error">{error}</div>}
@@ -72,13 +77,13 @@ function Webhooks() {
             <tbody>
               {items.map(w => (
                 <tr key={w.id}>
-                  <td><strong>{w.name}</strong></td>
+                  <td><button type="button" className="btn btn-secondary" onClick={()=>{setSelected(w);setDeleting(false);}}>{w.name||"Subscription #"+w.id}</button></td>
                   <td style={{ maxWidth: '300px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{w.url}</td>
                   <td>{(w.events || []).join(', ')}</td>
                   <td>{w.active ? 'yes' : 'no'}</td>
                   <td>
-                    <button className="btn-icon" title="Test delivery" onClick={() => testDeliver(w.id)}><Send size={14} /></button>
-                    <button className="btn-icon" onClick={() => remove(w.id)}><Trash2 size={14} /></button>
+                    <button className="btn-icon" title="Test delivery" disabled={!w.active} onClick={() => testDeliver(w.id)}><Send size={14} /></button>
+                    <button className="btn-icon" onClick={()=>{setSelected(w);setDeleting(true);}}><Trash2 size={14} /></button>
                   </td>
                 </tr>
               ))}
@@ -91,14 +96,15 @@ function Webhooks() {
       {testResult && (
         <div className="card" style={{ marginTop: '12px', background: testResult.ok ? '#ECFDF5' : '#FEE2E2' }}>
           <strong>Test result for #{testResult.id}:</strong>
-          <pre style={{ overflow: 'auto', fontSize: '12px' }}>{JSON.stringify(testResult.data, null, 2)}</pre>
+          <AIReport response={testResult.data} title="Delivery test result"/>
         </div>
       )}
 
+      {selected&&!showForm&&<Modal title={deleting?"Delete saved record?":"Saved webhooks details"} onClose={()=>setSelected(null)} footer={<><button className="btn btn-secondary" onClick={()=>setSelected(null)}>Cancel</button>{!deleting&&<button className="btn btn-primary" onClick={()=>{setForm({name:selected.name||'',url:selected.url||'',events:(selected.events||[]).join(', '),active:selected.status==='active'});setEditingId(selected.id);setShowForm(true);}}>Edit</button>}<button className="btn btn-danger" onClick={()=>deleting?remove(selected.id):setDeleting(true)}>{deleting?"Confirm delete":"Delete"}</button></>}>{deleting?<p>Delete this saved local record? No external message or delivery is created.</p>:<AIReport response={selected} title="Saved local source"/>}</Modal>}
       {showForm && (
         <div className="modal-overlay" onClick={() => setShowForm(false)}>
           <div className="modal" onClick={e => e.stopPropagation()}>
-            <h2>New Webhook</h2>
+            <h2>{editingId?'Edit Webhook':'New Webhook'}</h2>
             <form onSubmit={handleCreate}>
               <div className="form-group">
                 <label>Name</label>
@@ -117,7 +123,7 @@ function Webhooks() {
               </div>
               <div className="form-actions">
                 <button type="button" className="btn btn-secondary" onClick={() => setShowForm(false)}>Cancel</button>
-                <button type="submit" className="btn btn-primary">Create</button>
+                <button type="submit" className="btn btn-primary">{editingId?'Save changes':'Create'}</button>
               </div>
             </form>
           </div>

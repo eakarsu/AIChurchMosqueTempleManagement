@@ -1,3 +1,4 @@
+const {saveAIResult,DEFAULT_MODEL}=require('../lib/aiHelpers');
 const express = require('express');
 const router = express.Router();
 const pool = require('../db');
@@ -121,8 +122,9 @@ router.post('/:id/ai-summarize', async (req, res) => {
     const prompt = `Please summarize the following sermon titled "${sermon.title}" by ${sermon.speaker}:\n\n${transcript}`;
 
     const summary = await askAI(prompt, systemPrompt);
+    await saveAIResult(pool,{user_id:req.user.id,feature:'native-sermons-summary',input:{...req.body,...req.params},output:{summary},raw_text:summary,model:DEFAULT_MODEL,nativeWrite:client=>client.query('UPDATE sermons SET summary=$1 WHERE id=$2',[summary,id])});
 
-    await pool.query('UPDATE sermons SET summary = $1 WHERE id = $2', [summary, id]);
+
 
     res.json({ summary });
   } catch (err) {
@@ -144,6 +146,7 @@ router.post('/ai-generate-topics', async (req, res) => {
     if (season) prompt += ` Season/occasion: ${season}.`;
 
     const topics = await askAI(prompt, systemPrompt);
+    await saveAIResult(pool,{user_id:req.user.id,feature:'native-sermons-topics',input:{...req.body,...req.params},output:{topics},raw_text:topics,model:DEFAULT_MODEL});
     res.json({ topics });
   } catch (err) {
     console.error('Error generating topics:', err);

@@ -9,8 +9,7 @@ function Login() {
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
 
-  const handleSubmit = async (e) => {
-    e.preventDefault();
+  const signIn = async (credentials) => {
     setError('');
     setLoading(true);
 
@@ -18,7 +17,7 @@ function Login() {
       const res = await fetch('/api/auth/login', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email, password }),
+        body: JSON.stringify(credentials),
       });
 
       const data = await res.json();
@@ -27,7 +26,9 @@ function Login() {
         throw new Error(data.message || data.error || 'Login failed');
       }
 
+      if (!data.token) throw Error('The login service returned an invalid session.');
       localStorage.setItem('token', data.token);
+      localStorage.setItem('user', JSON.stringify(data.user || {}));
       navigate('/');
     } catch (err) {
       setError(err.message || 'Login failed. Please try again.');
@@ -36,9 +37,15 @@ function Login() {
     }
   };
 
-  const handleQuickLogin = () => {
-    setEmail(import.meta.env.VITE_DEMO_EMAIL || '');
-    setPassword(import.meta.env.VITE_DEMO_PASSWORD || '');
+  const handleSubmit = event => { event.preventDefault(); signIn({email,password}); };
+  const handleQuickLogin = async () => {
+    setError(''); setLoading(true);
+    try {
+      const response = await fetch('/api/auth/demo-credentials');
+      const data = await response.json();
+      if (!response.ok || !data.email || !data.password) throw Error(data.error || 'Local Demo login is unavailable.');
+      setEmail(data.email); setPassword(data.password); await signIn(data);
+    } catch (failure) { setError(failure.message); setLoading(false); }
   };
 
   return (
@@ -52,7 +59,7 @@ function Login() {
           <p>AI-Powered Religious Organization Management</p>
         </div>
 
-        {error && <div className="login-error">{error}</div>}
+        {error && <div role="alert" className="login-error">{error}</div>}
 
         <form className="login-form" onSubmit={handleSubmit}>
           <div className="form-group">
@@ -98,8 +105,8 @@ function Login() {
                 'Sign In'
               )}
             </button>
-            <button type="button" className="quick-login-btn" onClick={handleQuickLogin}>
-              Auto Fill Demo Credentials
+            <button type="button" className="quick-login-btn" disabled={loading} onClick={handleQuickLogin}>
+              Log In as Demo
             </button>
           </div>
         </form>

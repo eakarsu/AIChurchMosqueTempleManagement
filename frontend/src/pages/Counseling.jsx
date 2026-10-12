@@ -1,3 +1,6 @@
+import useNativeTransport, { nativeList } from '../components/useNativeTransport';
+import AIWorkspaceModal from '../components/AIWorkspaceModal';
+import '../components/AIWorkspace.css';
 import React, { useState, useEffect } from 'react';
 import { Search, Plus, HeartHandshake, Sparkles, Shield } from 'lucide-react';
 import DetailModal from '../components/DetailModal';
@@ -10,6 +13,8 @@ const emptySession = {
 };
 
 function Counseling() {
+  const {request,cancel:cancelAI,busy:requestBusy,reviewDialog}=useNativeTransport();
+  const [loadError,setLoadError]=useState('');
   const [sessions, setSessions] = useState([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
@@ -31,12 +36,12 @@ function Counseling() {
   const showToast = (msg, type = 'success') => { setToast({ msg, type }); setTimeout(() => setToast(null), 3000); };
 
   const fetchSessions = async () => {
-    setLoading(true);
+    setLoading(true);setLoadError('');
     try {
-      const res = await fetch('/api/counseling', { headers });
+      const res = await request('/api/counseling', { headers });
       const data = await res.json();
-      setSessions(Array.isArray(data) ? data : (data.data || []));
-    } catch { showToast('Failed to fetch sessions', 'error'); }
+      setSessions(nativeList(data));
+    } catch (failure) { setLoadError(failure.message || 'Saved data could not be loaded.');  }
     setLoading(false);
   };
 
@@ -46,18 +51,18 @@ function Counseling() {
     try {
       const url = editingId ? `/api/counseling/${editingId}` : '/api/counseling';
       const method = editingId ? 'PUT' : 'POST';
-      const res = await fetch(url, { method, headers, body: JSON.stringify(body) });
+      const res = await request(url, { method, headers, body: JSON.stringify(body) });
       if (!res.ok) throw new Error('Failed');
       showToast(editingId ? 'Session updated!' : 'Session scheduled!');
       setShowForm(false); setEditingId(null); setFormData(emptySession); fetchSessions();
-    } catch { showToast('Failed to save', 'error'); }
+    } catch (failure) { if(failure.name==='AbortError'){setAiLoading(false);return;} showToast('Failed to save', 'error'); }
   };
 
   const handleDelete = async (id) => {
     try {
-      await fetch(`/api/counseling/${id}`, { method: 'DELETE', headers });
+      await request(`/api/counseling/${id}`, { method: 'DELETE', headers });
       showToast('Session deleted'); setShowDetail(false); setSelected(null); fetchSessions();
-    } catch { showToast('Failed to delete', 'error'); }
+    } catch (failure) { if(failure.name==='AbortError'){setAiLoading(false);return;} showToast('Failed to delete', 'error'); }
   };
 
   const handleEdit = (s) => {
@@ -75,11 +80,11 @@ function Counseling() {
   const handleAiPrep = async (session) => {
     setAiLoading(true); setAiTitle('AI Session Preparation'); setAiResponse('');
     try {
-      const res = await fetch('/api/counseling/ai-session-prep', { method: 'POST', headers,
-        body: JSON.stringify({ session_type: session?.session_type || 'pastoral', topic: session?.topic || 'general guidance', notes: session?.notes || '' }) });
+      const res = await request('/api/counseling/ai-session-prep', { method: 'POST', headers,
+        body: JSON.stringify({ session_id: session?.id || null, session_type: session?.session_type || 'pastoral', topic: session?.topic || 'general guidance', client_background: session?.notes || '', previous_sessions: '', specific_concerns: '' }) });
       const data = await res.json();
       setAiResponse(data.preparation || data.response || data.result || JSON.stringify(data));
-    } catch { setAiResponse('Failed to generate preparation notes.'); }
+    } catch (failure) { if(failure.name==='AbortError'){setAiLoading(false);return;} setAiResponse('Failed to generate preparation notes.'); }
     setAiLoading(false);
   };
 
@@ -95,8 +100,12 @@ function Counseling() {
 
   if (loading) return <div className="loading-container"><div className="loading-spinner lg" /><p>Loading sessions...</p></div>;
 
+  if(loadError)return <section role="alert" className="page-container"><h1>Saved counseling could not be loaded</h1><p>{loadError}</p><button type="button" className="btn btn-secondary" onClick={fetchSessions}>Retry</button></section>;
+
   return (
     <div>
+      {reviewDialog}
+      {requestBusy&&<p role="status">Generating with OpenRouter… <button type="button" className="btn btn-secondary" onClick={cancelAI}>Cancel AI request</button></p>}
       <div className="page-header">
         <div><h1>Counseling Sessions</h1><p>Manage pastoral counseling appointments</p></div>
         <div className="page-header-actions">
@@ -107,7 +116,7 @@ function Counseling() {
 
       <div className="search-bar"><div className="search-wrapper"><Search size={18} /><input placeholder="Search sessions..." value={search} onChange={(e) => setSearch(e.target.value)} /></div></div>
 
-      <AIResponseDisplay response={aiResponse} title={aiTitle} isLoading={aiLoading} />
+      <AIResponseDisplay response={aiResponse} title={aiTitle} isLoading={aiLoading&&!reviewDialog} />
 
       {filtered.length === 0 ? (
         <div className="empty-state"><HeartHandshake size={48} /><p>No counseling sessions found.</p></div>
@@ -135,7 +144,7 @@ function Counseling() {
 
       {showDetail && selected && (
         <DetailModal isOpen={showDetail} onClose={() => { setShowDetail(false); setSelected(null); }} title={`Session: ${selected.client_name}`} onEdit={() => handleEdit(selected)} onDelete={() => handleDelete(selected.id)}>
-          <div className="detail-view">
+
             <div className="detail-row">
               <div className="detail-field"><span className="field-label">Client</span><span className="field-value">{selected.client_name}</span></div>
               <div className="detail-field"><span className="field-label">Counselor</span><span className="field-value">{selected.counselor}</span></div>
@@ -157,8 +166,8 @@ function Counseling() {
             <div style={{ marginTop: 12 }}>
               <button className="btn btn-ai" onClick={() => handleAiPrep(selected)}><Sparkles size={16} /> AI Prepare for Session</button>
             </div>
-            <AIResponseDisplay response={aiResponse} title={aiTitle} isLoading={aiLoading} />
-          </div>
+            <AIResponseDisplay response={aiResponse} title={aiTitle} isLoading={aiLoading&&!reviewDialog} />
+
         </DetailModal>
       )}
 

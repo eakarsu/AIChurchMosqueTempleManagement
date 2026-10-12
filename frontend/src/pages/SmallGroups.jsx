@@ -1,3 +1,6 @@
+import useNativeTransport, { nativeList } from '../components/useNativeTransport';
+import AIWorkspaceModal from '../components/AIWorkspaceModal';
+import '../components/AIWorkspace.css';
 import React, { useState, useEffect } from 'react';
 import { Search, Plus, UsersRound, Sparkles, MapPin, Clock } from 'lucide-react';
 import DetailModal from '../components/DetailModal';
@@ -10,6 +13,8 @@ const emptyGroup = {
 };
 
 function SmallGroups() {
+  const {request,cancel:cancelAI,busy:requestBusy,reviewDialog}=useNativeTransport();
+  const [loadError,setLoadError]=useState('');
   const [groups, setGroups] = useState([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
@@ -31,12 +36,12 @@ function SmallGroups() {
   const showToast = (msg, type = 'success') => { setToast({ msg, type }); setTimeout(() => setToast(null), 3000); };
 
   const fetchGroups = async () => {
-    setLoading(true);
+    setLoading(true);setLoadError('');
     try {
-      const res = await fetch('/api/small-groups', { headers });
+      const res = await request('/api/small-groups', { headers });
       const data = await res.json();
-      setGroups(Array.isArray(data) ? data : (data.data || []));
-    } catch { showToast('Failed to fetch groups', 'error'); }
+      setGroups(nativeList(data));
+    } catch (failure) { setLoadError(failure.message || 'Saved data could not be loaded.');  }
     setLoading(false);
   };
 
@@ -46,18 +51,18 @@ function SmallGroups() {
     try {
       const url = editingId ? `/api/small-groups/${editingId}` : '/api/small-groups';
       const method = editingId ? 'PUT' : 'POST';
-      const res = await fetch(url, { method, headers, body: JSON.stringify(body) });
+      const res = await request(url, { method, headers, body: JSON.stringify(body) });
       if (!res.ok) throw new Error('Failed');
       showToast(editingId ? 'Group updated!' : 'Group created!');
       setShowForm(false); setEditingId(null); setFormData(emptyGroup); fetchGroups();
-    } catch { showToast('Failed to save', 'error'); }
+    } catch (failure) { if(failure.name==='AbortError'){setAiLoading(false);return;} showToast('Failed to save', 'error'); }
   };
 
   const handleDelete = async (id) => {
     try {
-      await fetch(`/api/small-groups/${id}`, { method: 'DELETE', headers });
+      await request(`/api/small-groups/${id}`, { method: 'DELETE', headers });
       showToast('Group deleted'); setShowDetail(false); setSelected(null); fetchGroups();
-    } catch { showToast('Failed to delete', 'error'); }
+    } catch (failure) { if(failure.name==='AbortError'){setAiLoading(false);return;} showToast('Failed to delete', 'error'); }
   };
 
   const handleEdit = (g) => {
@@ -75,11 +80,11 @@ function SmallGroups() {
   const handleAiCurriculum = async () => {
     setAiLoading(true); setAiTitle('AI Curriculum Suggestions'); setAiResponse('');
     try {
-      const res = await fetch('/api/small-groups/ai-curriculum', { method: 'POST', headers,
+      const res = await request('/api/small-groups/ai-curriculum', { method: 'POST', headers,
         body: JSON.stringify({ groups: groups.slice(0, 10) }) });
       const data = await res.json();
       setAiResponse(data.curriculum || data.response || data.result || JSON.stringify(data));
-    } catch { setAiResponse('Failed to generate curriculum suggestions.'); }
+    } catch (failure) { if(failure.name==='AbortError'){setAiLoading(false);return;} setAiResponse('Failed to generate curriculum suggestions.'); }
     setAiLoading(false);
   };
 
@@ -94,8 +99,12 @@ function SmallGroups() {
 
   if (loading) return <div className="loading-container"><div className="loading-spinner lg" /><p>Loading small groups...</p></div>;
 
+  if(loadError)return <section role="alert" className="page-container"><h1>Saved smallgroups could not be loaded</h1><p>{loadError}</p><button type="button" className="btn btn-secondary" onClick={fetchGroups}>Retry</button></section>;
+
   return (
     <div>
+      {reviewDialog}
+      {requestBusy&&<p role="status">Generating with OpenRouter… <button type="button" className="btn btn-secondary" onClick={cancelAI}>Cancel AI request</button></p>}
       <div className="page-header">
         <div><h1>Small Groups</h1><p>Manage fellowship and study groups</p></div>
         <div className="page-header-actions">
@@ -106,7 +115,7 @@ function SmallGroups() {
 
       <div className="search-bar"><div className="search-wrapper"><Search size={18} /><input placeholder="Search groups..." value={search} onChange={(e) => setSearch(e.target.value)} /></div></div>
 
-      <AIResponseDisplay response={aiResponse} title={aiTitle} isLoading={aiLoading} />
+      <AIResponseDisplay response={aiResponse} title={aiTitle} isLoading={aiLoading&&!reviewDialog} />
 
       {filtered.length === 0 ? (
         <div className="empty-state"><UsersRound size={48} /><p>No small groups found.</p></div>
@@ -134,7 +143,7 @@ function SmallGroups() {
 
       {showDetail && selected && (
         <DetailModal isOpen={showDetail} onClose={() => { setShowDetail(false); setSelected(null); }} title={selected.name} onEdit={() => handleEdit(selected)} onDelete={() => handleDelete(selected.id)}>
-          <div className="detail-view">
+
             <div className="detail-field"><span className="field-label">Description</span><span className="field-value">{selected.description || '-'}</span></div>
             <div className="detail-row">
               <div className="detail-field"><span className="field-label">Leader</span><span className="field-value">{selected.leader || '-'}</span></div>
@@ -154,7 +163,7 @@ function SmallGroups() {
             </div>
             <div className="detail-field"><span className="field-label">Curriculum</span><span className="field-value">{selected.curriculum || '-'}</span></div>
             <div className="detail-field"><span className="field-label">Notes</span><span className="field-value">{selected.notes || '-'}</span></div>
-          </div>
+
         </DetailModal>
       )}
 

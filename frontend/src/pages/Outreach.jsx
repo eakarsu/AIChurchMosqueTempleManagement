@@ -1,3 +1,6 @@
+import useNativeTransport, { nativeList } from '../components/useNativeTransport';
+import AIWorkspaceModal from '../components/AIWorkspaceModal';
+import '../components/AIWorkspace.css';
 import React, { useState, useEffect } from 'react';
 import { Search, Plus, Globe, Sparkles, DollarSign, Users, Target } from 'lucide-react';
 import DetailModal from '../components/DetailModal';
@@ -10,6 +13,8 @@ const emptyProgram = {
 };
 
 function Outreach() {
+  const {request,cancel:cancelAI,busy:requestBusy,reviewDialog}=useNativeTransport();
+  const [loadError,setLoadError]=useState('');
   const [programs, setPrograms] = useState([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
@@ -31,12 +36,12 @@ function Outreach() {
   const showToast = (msg, type = 'success') => { setToast({ msg, type }); setTimeout(() => setToast(null), 3000); };
 
   const fetchPrograms = async () => {
-    setLoading(true);
+    setLoading(true);setLoadError('');
     try {
-      const res = await fetch('/api/outreach', { headers });
+      const res = await request('/api/outreach', { headers });
       const data = await res.json();
-      setPrograms(Array.isArray(data) ? data : (data.data || []));
-    } catch { showToast('Failed to fetch programs', 'error'); }
+      setPrograms(nativeList(data));
+    } catch (failure) { setLoadError(failure.message || 'Saved data could not be loaded.');  }
     setLoading(false);
   };
 
@@ -52,18 +57,18 @@ function Outreach() {
     try {
       const url = editingId ? `/api/outreach/${editingId}` : '/api/outreach';
       const method = editingId ? 'PUT' : 'POST';
-      const res = await fetch(url, { method, headers, body: JSON.stringify(body) });
+      const res = await request(url, { method, headers, body: JSON.stringify(body) });
       if (!res.ok) throw new Error('Failed');
       showToast(editingId ? 'Program updated!' : 'Program created!');
       setShowForm(false); setEditingId(null); setFormData(emptyProgram); fetchPrograms();
-    } catch { showToast('Failed to save', 'error'); }
+    } catch (failure) { if(failure.name==='AbortError'){setAiLoading(false);return;} showToast('Failed to save', 'error'); }
   };
 
   const handleDelete = async (id) => {
     try {
-      await fetch(`/api/outreach/${id}`, { method: 'DELETE', headers });
+      await request(`/api/outreach/${id}`, { method: 'DELETE', headers });
       showToast('Program deleted'); setShowDetail(false); setSelected(null); fetchPrograms();
-    } catch { showToast('Failed to delete', 'error'); }
+    } catch (failure) { if(failure.name==='AbortError'){setAiLoading(false);return;} showToast('Failed to delete', 'error'); }
   };
 
   const handleEdit = (p) => {
@@ -78,14 +83,15 @@ function Outreach() {
     setEditingId(p.id); setShowDetail(false); setShowForm(true);
   };
 
-  const handleAiImpact = async () => {
+  const handleAiImpact = async (source = null) => {
+    const savedSource=source?.id?source:null;
     setAiLoading(true); setAiTitle('AI Impact Analysis'); setAiResponse('');
     try {
-      const res = await fetch('/api/outreach/ai-impact', { method: 'POST', headers,
-        body: JSON.stringify({ programs: programs.slice(0, 15) }) });
+      const res = await request('/api/outreach/ai-impact', { method: 'POST', headers,
+        body: JSON.stringify({ program_id:savedSource?.id||null,programs: savedSource?[savedSource]:programs.slice(0, 15) }) });
       const data = await res.json();
       setAiResponse(data.analysis || data.response || data.result || JSON.stringify(data));
-    } catch { setAiResponse('Failed to generate impact analysis.'); }
+    } catch (failure) { if(failure.name==='AbortError'){setAiLoading(false);return;} setAiResponse('Failed to generate impact analysis.'); }
     setAiLoading(false);
   };
 
@@ -104,8 +110,12 @@ function Outreach() {
 
   if (loading) return <div className="loading-container"><div className="loading-spinner lg" /><p>Loading outreach programs...</p></div>;
 
+  if(loadError)return <section role="alert" className="page-container"><h1>Saved outreach could not be loaded</h1><p>{loadError}</p><button type="button" className="btn btn-secondary" onClick={fetchPrograms}>Retry</button></section>;
+
   return (
     <div>
+      {reviewDialog}
+      {requestBusy&&<p role="status">Generating with OpenRouter… <button type="button" className="btn btn-secondary" onClick={cancelAI}>Cancel AI request</button></p>}
       <div className="page-header">
         <div><h1>Outreach Programs</h1><p>Community outreach and service management</p></div>
         <div className="page-header-actions">
@@ -123,7 +133,7 @@ function Outreach() {
 
       <div className="search-bar"><div className="search-wrapper"><Search size={18} /><input placeholder="Search programs..." value={search} onChange={(e) => setSearch(e.target.value)} /></div></div>
 
-      <AIResponseDisplay response={aiResponse} title={aiTitle} isLoading={aiLoading} />
+      <AIResponseDisplay response={aiResponse} title={aiTitle} isLoading={aiLoading&&!reviewDialog} />
 
       {filtered.length === 0 ? (
         <div className="empty-state"><Globe size={48} /><p>No outreach programs found.</p></div>
@@ -150,7 +160,7 @@ function Outreach() {
 
       {showDetail && selected && (
         <DetailModal isOpen={showDetail} onClose={() => { setShowDetail(false); setSelected(null); }} title={selected.program_name} onEdit={() => handleEdit(selected)} onDelete={() => handleDelete(selected.id)}>
-          <div className="detail-view">
+
             <div className="detail-field"><span className="field-label">Description</span><span className="field-value">{selected.description || '-'}</span></div>
             <div className="detail-row">
               <div className="detail-field"><span className="field-label">Coordinator</span><span className="field-value">{selected.coordinator}</span></div>
@@ -173,10 +183,10 @@ function Outreach() {
             </div>
             <div className="detail-field"><span className="field-label">Impact Notes</span><span className="field-value">{selected.impact_notes || '-'}</span></div>
             <div style={{ marginTop: 12 }}>
-              <button className="btn btn-ai" onClick={handleAiImpact}><Sparkles size={16} /> Analyze Impact</button>
+              <button className="btn btn-ai" onClick={()=>handleAiImpact(selected)}><Sparkles size={16} /> Analyze Impact</button>
             </div>
-            <AIResponseDisplay response={aiResponse} title={aiTitle} isLoading={aiLoading} />
-          </div>
+            <AIResponseDisplay response={aiResponse} title={aiTitle} isLoading={aiLoading&&!reviewDialog} />
+
         </DetailModal>
       )}
 

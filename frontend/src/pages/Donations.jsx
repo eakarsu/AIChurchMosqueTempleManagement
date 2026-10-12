@@ -1,3 +1,6 @@
+import useNativeTransport, { nativeList } from '../components/useNativeTransport';
+import AIWorkspaceModal from '../components/AIWorkspaceModal';
+import '../components/AIWorkspace.css';
 import React, { useState, useEffect } from 'react';
 import { Search, Plus, DollarSign, Sparkles, Receipt } from 'lucide-react';
 import DetailModal from '../components/DetailModal';
@@ -9,6 +12,8 @@ const emptyDonation = {
 };
 
 function Donations() {
+  const {request,cancel:cancelAI,busy:requestBusy,reviewDialog}=useNativeTransport();
+  const [loadError,setLoadError]=useState('');
   const [donations, setDonations] = useState([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
@@ -33,14 +38,14 @@ function Donations() {
   };
 
   const fetchDonations = async () => {
-    setLoading(true);
+    setLoading(true);setLoadError('');
     try {
-      const res = await fetch('/api/donations', { headers });
+      const res = await request('/api/donations', { headers });
       const data = await res.json();
-      const list = Array.isArray(data) ? data : (data.donations || data.data || []);
+      const list = nativeList(data);
       setDonations(list);
-    } catch {
-      showToast('Failed to fetch donations', 'error');
+    } catch (failure) { setLoadError(failure.message || 'Saved data could not be loaded.');
+
     }
     setLoading(false);
   };
@@ -51,26 +56,26 @@ function Donations() {
     try {
       const url = editingId ? `/api/donations/${editingId}` : '/api/donations';
       const method = editingId ? 'PUT' : 'POST';
-      const res = await fetch(url, { method, headers, body: JSON.stringify(body) });
+      const res = await request(url, { method, headers, body: JSON.stringify(body) });
       if (!res.ok) throw new Error('Failed to save');
       showToast(editingId ? 'Donation updated!' : 'Donation recorded!');
       setShowForm(false);
       setEditingId(null);
       setFormData(emptyDonation);
       fetchDonations();
-    } catch {
+    } catch (failure) { if(failure.name==='AbortError'){setAiLoading(false);return;}
       showToast('Failed to save donation', 'error');
     }
   };
 
   const handleDelete = async (id) => {
     try {
-      await fetch(`/api/donations/${id}`, { method: 'DELETE', headers });
+      await request(`/api/donations/${id}`, { method: 'DELETE', headers });
       showToast('Donation deleted');
       setShowDetail(false);
       setSelected(null);
       fetchDonations();
-    } catch {
+    } catch (failure) { if(failure.name==='AbortError'){setAiLoading(false);return;}
       showToast('Failed to delete', 'error');
     }
   };
@@ -97,10 +102,10 @@ function Donations() {
     setAiTitle('AI Thank You Letter');
     setAiResponse('');
     try {
-      const res = await fetch('/api/donations/ai-thank-you', {
+      const res = await request('/api/donations/ai-thank-you', {
         method: 'POST', headers,
         body: JSON.stringify({
-          donor_name: donation.donor_name,
+          donation_id: donation.id||donation._id,donor_name: donation.donor_name,
           amount: donation.amount,
           category: donation.category,
           date: donation.date,
@@ -108,7 +113,7 @@ function Donations() {
       });
       const data = await res.json();
       setAiResponse(data.letter || data.response || data.message || data.result || JSON.stringify(data));
-    } catch {
+    } catch (failure) { if(failure.name==='AbortError'){setAiLoading(false);return;}
       setAiResponse('Failed to generate thank you letter. Please try again.');
     }
     setAiLoading(false);
@@ -116,12 +121,12 @@ function Donations() {
 
   const handleTaxReceipt = async (donation) => {
     try {
-      const res = await fetch(`/api/donations/${donation._id || donation.id}/generate-receipt`, {
+      const res = await request(`/api/donations/${donation._id || donation.id}/generate-receipt`, {
         method: 'POST', headers,
       });
       const data = await res.json();
-      showToast(data.message || 'Tax receipt generated!');
-    } catch {
+      setAiTitle('Tax receipt draft');setAiResponse(data.receipt||data);showToast(data.message || 'Tax receipt draft prepared.');
+    } catch (failure) { if(failure.name==='AbortError'){setAiLoading(false);return;}
       showToast('Failed to generate receipt', 'error');
     }
   };
@@ -142,8 +147,12 @@ function Donations() {
 
   if (loading) return <div className="loading-container"><div className="loading-spinner lg" /><p>Loading donations...</p></div>;
 
+  if(loadError)return <section role="alert" className="page-container"><h1>Saved donations could not be loaded</h1><p>{loadError}</p><button type="button" className="btn btn-secondary" onClick={fetchDonations}>Retry</button></section>;
+
   return (
     <div>
+      {reviewDialog}
+      {requestBusy&&<p role="status">Generating with OpenRouter… <button type="button" className="btn btn-secondary" onClick={cancelAI}>Cancel AI request</button></p>}
       <div className="page-header">
         <div>
           <h1>Donation Management</h1>
@@ -178,7 +187,7 @@ function Donations() {
         </div>
       </div>
 
-      <AIResponseDisplay response={aiResponse} title={aiTitle} isLoading={aiLoading} />
+      <AIResponseDisplay response={aiResponse} title={aiTitle} isLoading={aiLoading&&!reviewDialog} />
 
       {filtered.length === 0 ? (
         <div className="empty-state">
@@ -226,7 +235,7 @@ function Donations() {
           onEdit={() => handleEdit(selected)}
           onDelete={() => handleDelete(selected._id || selected.id)}
         >
-          <div className="detail-view">
+
             <div className="detail-row">
               <div className="detail-field">
                 <span className="field-label">Donor Name</span>
@@ -283,8 +292,8 @@ function Donations() {
                 <Receipt size={16} /> Generate Tax Receipt
               </button>
             </div>
-            <AIResponseDisplay response={aiResponse} title={aiTitle} isLoading={aiLoading} />
-          </div>
+            <AIResponseDisplay response={aiResponse} title={aiTitle} isLoading={aiLoading&&!reviewDialog} />
+
         </DetailModal>
       )}
 

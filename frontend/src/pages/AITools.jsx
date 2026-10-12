@@ -1,7 +1,9 @@
-import React, { useState } from 'react';
-import { Brain, AlertCircle } from 'lucide-react';
-
-const TOOLS = [
+import React, { useEffect, useRef, useState } from 'react';
+import {useLocation} from 'react-router-dom';
+import FullFieldPresets from '../components/FullFieldPresets';
+import AIReport from '../components/AIReport';
+import {nativeFetch,nativeList} from '../components/useNativeTransport';
+export const TOOLS = [
   {
     key: 'sermon-analyzer',
     label: 'Sermon Analyzer',
@@ -94,118 +96,31 @@ const TOOLS = [
   },
 ];
 
+const sourceRoutes = {'sermon-analyzer':['sermons'],'donation-insights':['donations'],'prayer-guidance':['prayers'],'member-engagement':['members','attendance'],'event-planner':[],'outreach-strategy':['outreach'],'sermon-qa':['sermons'],'volunteer-burnout':['volunteers'],'prayer-categorize':['prayers'],'facility-optimizer':['events','facilities']};
+export function toolPresets(tool, sources) {
+ const sermon=sources.sermons?.[0],prayer=sources.prayers?.[0];
+ const json=value=>JSON.stringify(value||[],null,2);
+ return ['Source review','Planning review','Executive review'].map((label,index)=>({label,values:{
+ speaker:sermon?.speaker||'Unknown — verify with the source owner',date:sermon?.date?String(sermon.date).slice(0,10):new Date().toISOString().slice(0,10),sermon_transcript:sermon?.transcript||'No saved transcript was supplied. Request authorized source material before making scriptural claims.',
+ period:['Current saved records','Review recorded giving periods','Compare verified source dates'][index],donations:json(sources.donations),
+ category:prayer?.category||'Unknown — review with permission',prayer_request_text:prayer?.request_text||prayer?.request||prayer?.prayer_text||'Illustrative request: prepare respectful questions for an authorized follow-up. No recipient, pastoral action or consent is implied.',
+ member_data:json(sources.members),attendance_history:json(sources.attendance),event_type:['Illustrative community planning workshop','Illustrative volunteer orientation','Illustrative interfaith community meeting'][index],expected_attendance:String([35,60,80][index]),budget:String([1200,1800,2400][index]),
+ community_demographics:'Not verified. Use only the saved program records supplied; do not infer sensitive beliefs or demographics.',current_programs:(sources.outreach||[]).map(row=>row.program_name).join(', ')||'No current program sources supplied',
+ question:['Summarize the saved sermon sources and flag missing evidence.','Compare the themes in the supplied sources without inventing quotations.','Prepare review questions with genuine source citations.'][index],sermon_ids:(sources.sermons||[]).map(row=>row.id).join(', '),
+ volunteer_logs:json(sources.volunteers),prayer_requests:json(sources.prayers),bookings:json(sources.events),facilities:json(sources.facilities),
+ }}));
+}
+const sourceFields=new Set(['speaker','date','sermon_transcript','donations','member_data','attendance_history','sermon_ids','volunteer_logs','prayer_requests','bookings','facilities','prayer_request_text','category','current_programs']);
 export default function AITools() {
-  const [activeKey, setActiveKey] = useState(TOOLS[0].key);
-  const [inputs, setInputs] = useState({});
-  const [result, setResult] = useState(null);
-  const [error, setError] = useState('');
-  const [loading, setLoading] = useState(false);
-
-  const tool = TOOLS.find(t => t.key === activeKey);
-
-  const handleSubmit = async (e) => {
-    e.preventDefault();
-    setError(''); setResult(null); setLoading(true);
-    try {
-      const payload = {};
-      for (const f of tool.fields) {
-        const v = inputs[f.name];
-        if ((v === undefined || v === '') && !f.optional) continue;
-        if (v === undefined || v === '') continue;
-        if (f.type === 'json') {
-          try { payload[f.name] = JSON.parse(v); }
-          catch { throw new Error(`Invalid JSON in ${f.label}`); }
-        } else if (f.type === 'list') {
-          payload[f.name] = String(v).split(',').map(s => s.trim()).filter(Boolean);
-        } else if (f.type === 'number') {
-          payload[f.name] = Number(v);
-        } else {
-          payload[f.name] = v;
-        }
-      }
-
-      const token = localStorage.getItem('token');
-      const res = await fetch(`/api/ai/${activeKey}`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-        body: JSON.stringify(payload),
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || data.details || 'AI request failed');
-      setResult(data);
-    } catch (err) {
-      setError(err.message);
-    }
-    setLoading(false);
-  };
-
-  return (
-    <div className="page-container">
-      <div className="page-header">
-        <h1><Brain size={24} /> AI Tools</h1>
-        <p>Specialized AI features for religious institution operations.</p>
-      </div>
-
-      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginBottom: 24 }}>
-        {TOOLS.map(t => (
-          <button
-            key={t.key}
-            onClick={() => { setActiveKey(t.key); setInputs({}); setResult(null); setError(''); }}
-            className={`btn ${activeKey === t.key ? 'btn-primary' : 'btn-secondary'}`}
-            style={{ padding: '8px 16px' }}
-          >
-            {t.label}
-          </button>
-        ))}
-      </div>
-
-      <div className="card" style={{ marginBottom: 24, padding: 24 }}>
-        <h2>{tool.label}</h2>
-        <p style={{ color: '#666' }}>{tool.description}</p>
-        <form onSubmit={handleSubmit}>
-          {tool.fields.map(f => (
-            <div className="form-group" key={f.name} style={{ marginBottom: 16 }}>
-              <label style={{ display: 'block', marginBottom: 4, fontWeight: 500 }}>{f.label}</label>
-              {f.type === 'textarea' || f.type === 'json' ? (
-                <textarea
-                  rows={f.type === 'json' ? 6 : 4}
-                  className="form-input"
-                  style={{ width: '100%', padding: 8, fontFamily: f.type === 'json' ? 'monospace' : 'inherit' }}
-                  value={inputs[f.name] || ''}
-                  onChange={(e) => setInputs({ ...inputs, [f.name]: e.target.value })}
-                  placeholder={f.type === 'json' ? '[]' : ''}
-                />
-              ) : (
-                <input
-                  type={f.type === 'number' ? 'number' : f.type === 'date' ? 'date' : 'text'}
-                  className="form-input"
-                  style={{ width: '100%', padding: 8 }}
-                  value={inputs[f.name] || ''}
-                  onChange={(e) => setInputs({ ...inputs, [f.name]: e.target.value })}
-                />
-              )}
-            </div>
-          ))}
-          <button type="submit" disabled={loading} className="btn btn-primary">
-            {loading ? 'Analyzing...' : 'Run'}
-          </button>
-        </form>
-      </div>
-
-      {error && (
-        <div className="alert alert-danger" style={{ display: 'flex', gap: 8, padding: 12, background: '#fee', border: '1px solid #fcc', borderRadius: 4, color: '#c00' }}>
-          <AlertCircle size={20} /> {error}
-        </div>
-      )}
-
-      {result && (
-        <div className="card" style={{ padding: 24 }}>
-          <h3>Result</h3>
-          <pre style={{ background: '#f5f5f5', padding: 16, borderRadius: 4, overflow: 'auto', maxHeight: 600 }}>
-            {JSON.stringify(result, null, 2)}
-          </pre>
-        </div>
-      )}
-    </div>
-  );
+ const location=useLocation(),retained=location.state||{};
+ const [activeKey,setActiveKey]=useState(TOOLS.some(tool=>tool.key===retained.feature)?retained.feature:TOOLS[0].key);
+ const [inputs,setInputs]=useState(retained.input||{}),[editingId,setEditingId]=useState(retained.reportId||null),[result,setResult]=useState(null),[error,setError]=useState(''),[loading,setLoading]=useState(false),[sources,setSources]=useState({}),[sourceError,setSourceError]=useState(''),[sourceLoading,setSourceLoading]=useState(true);
+ const request=useRef(null),read=useRef(null);const tool=TOOLS.find(item=>item.key===activeKey);
+ const headers=()=>({'Content-Type':'application/json',Authorization:'Bearer '+localStorage.getItem('token')});
+ const cancel=()=>{request.current?.abort();request.current=null;setLoading(false);};
+ const loadSources=async()=>{read.current?.abort();const controller=new AbortController();read.current=controller;setSourceLoading(true);setSourceError('');try{const rows=await Promise.all(sourceRoutes[activeKey].map(async route=>[route,nativeList(await(await nativeFetch('/api/'+route,{headers:headers(),signal:controller.signal})).json())]));if(read.current===controller&&!controller.signal.aborted)setSources(Object.fromEntries(rows));}catch(failure){if(read.current===controller&&!controller.signal.aborted)setSourceError(failure.message||'Native AI sources could not be loaded.');}finally{if(read.current===controller&&!controller.signal.aborted){read.current=null;setSourceLoading(false);}}};
+ useEffect(()=>{loadSources();return()=>{read.current?.abort();read.current=null;request.current?.abort();request.current=null;};},[activeKey]);
+ const choose=key=>{cancel();setActiveKey(key);setInputs({});setEditingId(null);setResult(null);setError('');};
+ const generate=async event=>{event.preventDefault();if(request.current)return;const controller=new AbortController();request.current=controller;setLoading(true);setError('');setResult(null);try{const payload={};for(const f of tool.fields){const value=inputs[f.name];if(value===undefined||value==='')continue;payload[f.name]=f.type==='json'?JSON.parse(value):f.type==='list'?String(value).split(',').map(item=>item.trim()).filter(Boolean):f.type==='number'?Number(value):value;}if(editingId)payload.report_id=editingId;const response=await nativeFetch('/api/ai/'+activeKey,{method:'POST',headers:headers(),signal:controller.signal,body:JSON.stringify(payload)});const data=await response.json();if(request.current!==controller||controller.signal.aborted)return;setResult(data);if(data.id)setEditingId(data.id);}catch(failure){if(request.current===controller&&!controller.signal.aborted)setError(failure.message||'The report could not be generated.');}finally{if(request.current===controller){request.current=null;setLoading(false);}}};
+ return <main className="page-container"><header className="page-header"><h1>AI Tools</h1><p>Review native sources, fill every field, then generate a saved OpenRouter report. Planning examples do not create communications, payments, approvals or consent.</p></header><nav className="ai-actions">{TOOLS.map(item=><button type="button" key={item.key} className={'btn '+(activeKey===item.key?'btn-primary':'btn-secondary')} onClick={()=>choose(item.key)}>{item.label}</button>)}</nav><section className="card" style={{padding:24,marginTop:24}}><h2>{tool.label}</h2><p>{tool.description}</p>{sourceLoading?<p role="status">Loading native sources…</p>:sourceError?<section role="alert"><p>{sourceError}</p><button className="btn btn-secondary" onClick={loadSources}>Retry</button></section>:<form onSubmit={generate} data-native-ai={tool.key}><FullFieldPresets value={inputs} presets={toolPresets(tool,sources)} disabled={loading} onChange={next=>{const filled=Object.fromEntries(tool.fields.map(f=>[f.name,next[f.name]]));for(const f of tool.fields)if(sourceFields.has(f.name)&&String(inputs[f.name]||'').trim())filled[f.name]=inputs[f.name];setInputs(filled);setResult(null);setError('');}}/><p className="ai-muted">Each choice fills every field, including optional fields. Saved source references and current source data are preserved. Review illustrative planning amounts before generating.</p>{tool.fields.map(f=><div className="form-group" key={f.name}><label htmlFor={'native-ai-'+f.name}>{f.label}{f.optional?' · Optional':''}</label>{['textarea','json'].includes(f.type)?<textarea id={'native-ai-'+f.name} className="form-input" rows={4} value={inputs[f.name]??''} disabled={loading} onChange={event=>setInputs({...inputs,[f.name]:event.target.value})}/>:<input id={'native-ai-'+f.name} className="form-input" type={['number','date'].includes(f.type)?f.type:'text'} value={inputs[f.name]??''} disabled={loading} onChange={event=>setInputs({...inputs,[f.name]:event.target.value})}/>}</div>)}<div className="ai-actions"><button type="button" className="btn btn-secondary" onClick={()=>{if(loading)cancel();else{setInputs({});setResult(null);setEditingId(null);setError('');}}}>Cancel</button><button className="btn btn-primary" type="submit" disabled={loading}>{loading?'Generating…':'Generate with OpenRouter'}</button></div></form>}</section><AIReport response={result} error={error} loading={loading} title={tool.label}/></main>;
 }

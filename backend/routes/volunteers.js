@@ -1,3 +1,4 @@
+const {saveAIResult,DEFAULT_MODEL}=require('../lib/aiHelpers');
 const express = require('express');
 const router = express.Router();
 const pool = require('../db');
@@ -116,6 +117,7 @@ router.post('/ai-match', async (req, res) => {
     const prompt = `Based on the following volunteer data, suggest optimal ministry assignments and explain your reasoning:\n\n${volunteersInfo}`;
 
     const matches = await askAI(prompt, systemPrompt);
+    await saveAIResult(pool,{user_id:req.user.id,feature:'native-volunteers-matches',input:{...req.body,...req.params},output:{matches},raw_text:matches,model:DEFAULT_MODEL});
     res.json({ matches });
   } catch (err) {
     console.error('Error matching volunteers:', err);

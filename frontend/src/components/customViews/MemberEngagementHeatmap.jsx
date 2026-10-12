@@ -1,8 +1,9 @@
+import {nativeFetch} from '../useNativeTransport';
 import React, { useEffect, useState } from 'react';
 import { Flame, Award } from 'lucide-react';
 
 function cellColor(score) {
-  // 0-9 score → green ramp
+  // Recorded membership presence
   if (score <= 1) return '#0f172a';
   if (score <= 3) return '#14532d';
   if (score <= 5) return '#15803d';
@@ -15,43 +16,21 @@ function MemberEngagementHeatmap() {
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState(null);
 
-  useEffect(() => {
-    const token = localStorage.getItem('token');
-    fetch('/api/custom-views/engagement-heatmap?members=12', {
-      headers: { Authorization: `Bearer ${token}` },
-    })
-      .then((r) => (r.ok ? r.json() : Promise.reject(r.status)))
-      .then(setData)
-      .catch((e) => setErr(String(e)))
-      .finally(() => setLoading(false));
-  }, []);
+  const load=async()=>{setLoading(true);setErr(null);try{const response=await nativeFetch('/api/custom-views/engagement-heatmap?members=100',{headers:{Authorization:'Bearer '+localStorage.getItem('token')}});const body=await response.json();if(!Array.isArray(body?.matrix))throw Error('Saved chart returned an invalid response.');setData(body);}catch(failure){setErr(failure.message);}finally{setLoading(false);}};
+  useEffect(()=>{load();},[]);
 
   if (loading) return <div style={{ padding: 16, color: '#94a3b8' }}>Loading engagement heatmap...</div>;
-  if (err) return <div style={{ padding: 16, color: '#ef4444' }}>Error: {err}</div>;
+  if (err) return <div role="alert"><p>Saved chart could not be loaded: {err}</p><button className="btn btn-secondary" onClick={load}>Retry</button></div>;
   if (!data) return null;
 
   return (
     <div style={{ background: '#1e293b', borderRadius: 12, padding: 24, border: '1px solid #334155' }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 16 }}>
         <Flame size={20} color="#f59e0b" />
-        <h3 style={{ color: '#f1f5f9', margin: 0, fontSize: 18 }}>Member Engagement Heatmap</h3>
+        <h3 style={{ color: '#f1f5f9', margin: 0, fontSize: 18 }}>Saved Group Memberships</h3>
       </div>
 
-      <div style={{ display: 'flex', gap: 12, marginBottom: 16, flexWrap: 'wrap' }}>
-        <div style={{ background: '#0f172a', padding: 12, borderRadius: 8, flex: 1, minWidth: 140 }}>
-          <div style={{ color: '#94a3b8', fontSize: 12, display: 'flex', alignItems: 'center', gap: 4 }}>
-            <Award size={12} /> Top Member
-          </div>
-          <div style={{ color: '#f1f5f9', fontSize: 16, fontWeight: 600 }}>{data.top_member.name}</div>
-          <div style={{ color: '#86efac', fontSize: 12 }}>Score: {data.top_member.total_score}</div>
-        </div>
-        <div style={{ background: '#0f172a', padding: 12, borderRadius: 8, flex: 1, minWidth: 140 }}>
-          <div style={{ color: '#94a3b8', fontSize: 12 }}>Popular Activity</div>
-          <div style={{ color: '#f1f5f9', fontSize: 16, fontWeight: 600 }}>{data.most_popular_activity.name}</div>
-          <div style={{ color: '#fbbf24', fontSize: 12 }}>Total: {data.most_popular_activity.total}</div>
-        </div>
-      </div>
-
+      <p style={{color:'#cbd5e1'}}>{data.source}</p>
       <div style={{ overflowX: 'auto' }}>
         <table style={{ width: '100%', borderCollapse: 'separate', borderSpacing: 2, fontSize: 11 }}>
           <thead>
@@ -70,7 +49,7 @@ function MemberEngagementHeatmap() {
                 {data.activities.map((a) => (
                   <td
                     key={a}
-                    title={`${row.member_name} - ${a}: ${row.scores[a]}`}
+                    title={`${row.member_name} - ${a}: ${row.scores[a]?'Joined':'—'}`}
                     style={{
                       background: cellColor(row.scores[a]),
                       color: row.scores[a] >= 6 ? '#052e16' : '#f1f5f9',
@@ -81,7 +60,7 @@ function MemberEngagementHeatmap() {
                       minWidth: 24,
                     }}
                   >
-                    {row.scores[a]}
+                    {row.scores[a]?'Joined':'—'}
                   </td>
                 ))}
                 <td style={{ color: '#f1f5f9', textAlign: 'center', padding: 4, fontWeight: 700 }}>{row.total}</td>
@@ -91,13 +70,7 @@ function MemberEngagementHeatmap() {
         </table>
       </div>
 
-      <div style={{ display: 'flex', gap: 8, marginTop: 12, alignItems: 'center', fontSize: 11, color: '#94a3b8' }}>
-        <span>Less</span>
-        {[0, 2, 4, 6, 8].map((s) => (
-          <div key={s} style={{ width: 16, height: 12, background: cellColor(s), borderRadius: 2 }} />
-        ))}
-        <span>More</span>
-      </div>
+      <p style={{color:'#94a3b8'}}>Joined reflects a saved group membership. No engagement rating is inferred.</p>
     </div>
   );
 }

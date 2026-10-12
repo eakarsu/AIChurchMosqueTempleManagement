@@ -1,3 +1,6 @@
+import useNativeTransport, { nativeList } from '../components/useNativeTransport';
+import AIWorkspaceModal from '../components/AIWorkspaceModal';
+import '../components/AIWorkspace.css';
 import React, { useState, useEffect } from 'react';
 import { Search, Plus, Bell, Sparkles } from 'lucide-react';
 import DetailModal from '../components/DetailModal';
@@ -10,6 +13,8 @@ const emptyAnnouncement = {
 };
 
 function Announcements() {
+  const {request,cancel:cancelAI,busy:requestBusy,reviewDialog}=useNativeTransport();
+  const [loadError,setLoadError]=useState('');
   const [announcements, setAnnouncements] = useState([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
@@ -34,14 +39,14 @@ function Announcements() {
   };
 
   const fetchAnnouncements = async () => {
-    setLoading(true);
+    setLoading(true);setLoadError('');
     try {
-      const res = await fetch('/api/announcements', { headers });
+      const res = await request('/api/announcements', { headers });
       const data = await res.json();
-      const list = Array.isArray(data) ? data : (data.announcements || data.data || []);
+      const list = nativeList(data);
       setAnnouncements(list);
-    } catch {
-      showToast('Failed to fetch announcements', 'error');
+    } catch (failure) { setLoadError(failure.message || 'Saved data could not be loaded.');
+
     }
     setLoading(false);
   };
@@ -51,26 +56,26 @@ function Announcements() {
     try {
       const url = editingId ? `/api/announcements/${editingId}` : '/api/announcements';
       const method = editingId ? 'PUT' : 'POST';
-      const res = await fetch(url, { method, headers, body: JSON.stringify(formData) });
+      const res = await request(url, { method, headers, body: JSON.stringify(formData) });
       if (!res.ok) throw new Error('Failed to save');
       showToast(editingId ? 'Announcement updated!' : 'Announcement created!');
       setShowForm(false);
       setEditingId(null);
       setFormData(emptyAnnouncement);
       fetchAnnouncements();
-    } catch {
+    } catch (failure) { if(failure.name==='AbortError'){setAiLoading(false);return;}
       showToast('Failed to save announcement', 'error');
     }
   };
 
   const handleDelete = async (id) => {
     try {
-      await fetch(`/api/announcements/${id}`, { method: 'DELETE', headers });
+      await request(`/api/announcements/${id}`, { method: 'DELETE', headers });
       showToast('Announcement deleted');
       setShowDetail(false);
       setSelected(null);
       fetchAnnouncements();
-    } catch {
+    } catch (failure) { if(failure.name==='AbortError'){setAiLoading(false);return;}
       showToast('Failed to delete', 'error');
     }
   };
@@ -97,9 +102,9 @@ function Announcements() {
     setAiTitle('AI Generated Draft');
     setAiResponse('');
     try {
-      const res = await fetch('/api/announcements/ai-draft', {
+      const res = await request('/api/announcements/ai-draft', {
         method: 'POST', headers,
-        body: JSON.stringify({ title: formData.title, category: formData.category, target_audience: formData.target_audience }),
+        body: JSON.stringify({ topic: formData.title, category: formData.category, target_audience: formData.target_audience, tone: 'Professional', key_details: formData.content }),
       });
       const data = await res.json();
       const draft = data.draft || data.content || data.response || data.message || data.result || '';
@@ -107,7 +112,7 @@ function Announcements() {
       if (draft && typeof draft === 'string') {
         setFormData(prev => ({ ...prev, content: draft }));
       }
-    } catch {
+    } catch (failure) { if(failure.name==='AbortError'){setAiLoading(false);return;}
       setAiResponse('Failed to generate draft. Please try again.');
     }
     setAiLoading(false);
@@ -128,8 +133,12 @@ function Announcements() {
 
   if (loading) return <div className="loading-container"><div className="loading-spinner lg" /><p>Loading announcements...</p></div>;
 
+  if(loadError)return <section role="alert" className="page-container"><h1>Saved announcements could not be loaded</h1><p>{loadError}</p><button type="button" className="btn btn-secondary" onClick={fetchAnnouncements}>Retry</button></section>;
+
   return (
     <div>
+      {reviewDialog}
+      {requestBusy&&<p role="status">Generating with OpenRouter… <button type="button" className="btn btn-secondary" onClick={cancelAI}>Cancel AI request</button></p>}
       <div className="page-header">
         <div>
           <h1>Announcements</h1>
@@ -149,7 +158,7 @@ function Announcements() {
         </div>
       </div>
 
-      <AIResponseDisplay response={aiResponse} title={aiTitle} isLoading={aiLoading} />
+      <AIResponseDisplay response={aiResponse} title={aiTitle} isLoading={aiLoading&&!reviewDialog} />
 
       {filtered.length === 0 ? (
         <div className="empty-state">
@@ -189,7 +198,7 @@ function Announcements() {
           onEdit={() => handleEdit(selected)}
           onDelete={() => handleDelete(selected._id || selected.id)}
         >
-          <div className="detail-view">
+
             <div className="detail-row">
               <div className="detail-field">
                 <span className="field-label">Category</span>
@@ -230,7 +239,7 @@ function Announcements() {
               <span className="field-label">Content</span>
               <span className="field-value" style={{ lineHeight: 1.7, whiteSpace: 'pre-wrap' }}>{selected.content || '-'}</span>
             </div>
-          </div>
+
         </DetailModal>
       )}
 
@@ -315,7 +324,7 @@ function Announcements() {
                     <option value="archived">Archived</option>
                   </select>
                 </div>
-                <AIResponseDisplay response={aiResponse} title={aiTitle} isLoading={aiLoading} />
+                <AIResponseDisplay response={aiResponse} title={aiTitle} isLoading={aiLoading&&!reviewDialog} />
                 <div className="modal-footer" style={{ padding: 0, border: 'none', marginTop: 16 }}>
                   <button type="button" className="btn btn-secondary" onClick={() => { setShowForm(false); setEditingId(null); }}>Cancel</button>
                   <button type="submit" className="btn btn-primary">{editingId ? 'Update' : 'Create'} Announcement</button>

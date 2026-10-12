@@ -1,0 +1,38 @@
+'use strict';
+const NOTICE='Fictional local planning draft only. No provider answer, real recipient, scripture quotation, delivered message, charge, approval or consent is claimed.';
+async function seedNativePlanning({pool,actorId,env}){
+ if(env.NODE_ENV==='production'||env.ENABLE_DEMO_CREDENTIAL_AUTOFILL==='false')return {enabled:false,added:0};
+ const {ensureNativeLists,ensureMinistryRoles}=require('../services/nativeLists'),{ensureAIResultsTable}=require('../lib/aiHelpers'),{REPORT_STORAGE_SQL}=require('../aiWorkspace.cjs');
+ await ensureNativeLists(pool);await ensureMinistryRoles(pool);await ensureAIResultsTable(pool);await pool.query(REPORT_STORAGE_SQL);
+ const c=await pool.connect();let added=0;
+ try{await c.query('BEGIN');await c.query("SELECT pg_advisory_xact_lock(hashtext('sacred-grounds-planning'))");const actor=(await c.query('SELECT id FROM users WHERE id=$1',[actorId])).rows[0];if(!actor)throw Error('The existing Demo account was not found.');
+ const sources={};for(const table of ['sermons','donations','members','attendance','prayers','volunteers','facilities','events','outreach'])sources[table]=(await c.query(`SELECT * FROM ${table} ORDER BY id LIMIT 15`)).rows;
+ const sermon=sources.sermons[0],prayer=sources.prayers[0],native={
+ 'sermon-analyzer':{speaker:sermon?.speaker||'Unknown',date:sermon?.date?new Date(sermon.date).toISOString().slice(0,10):new Date().toISOString().slice(0,10),sermon_transcript:sermon?.transcript||NOTICE},
+ 'donation-insights':{period:'Current saved sources',donations:sources.donations},'prayer-guidance':{category:prayer?.category||'Unknown',prayer_request_text:prayer?.request_text||prayer?.prayer_text||NOTICE},
+ 'member-engagement':{member_data:sources.members,attendance_history:sources.attendance},'event-planner':{event_type:'Illustrative community planning review',expected_attendance:35,budget:1200},
+ 'outreach-strategy':{community_demographics:'Unknown; verify authorized demographics before making inferences.',current_programs:sources.outreach.map(row=>row.program_name)},
+ 'sermon-qa':{question:'Review saved sermon sources and identify missing evidence.',sermon_ids:sources.sermons.map(row=>row.id)},'volunteer-burnout':{volunteer_logs:sources.volunteers},
+ 'prayer-categorize':{prayer_requests:sources.prayers},'facility-optimizer':{bookings:sources.events,facilities:sources.facilities}};
+ const shortcuts={
+ 'native-sermons-summary':{id:sermon?.id},'native-sermons-topics':{theme:'Local source review',audience:'Authorized organization reviewers',season:'Not specified'},
+ 'donation-thank-you':{...sources.donations[0]},'member-engagement-suggestions':{member_data:sources.members},
+ 'native-events-description':{title:'Local event planning',category:'planning',date:'Not scheduled',location:'Not reserved',audience:'Authorized reviewers'},
+ 'native-volunteers-matches':{volunteer_data:sources.volunteers},'native-prayers-guidance':{id:prayer?.id},'native-facilities-suggestions':{facility_data:sources.facilities},
+ 'native-announcements-draft':{topic:'Local announcement planning',category:'planning',target_audience:'Authorized reviewers',tone:'Professional',key_details:NOTICE},
+ 'native-attendance-insights':{records:sources.attendance,question:'Review saved attendance sources without assuming causation.'},
+ 'native-smallgroups-curriculum':{groups:(await c.query('SELECT * FROM small_groups ORDER BY id LIMIT 15')).rows,group_name:'Local planning group',category:'Planning',current_curriculum:'Not approved',member_count:'Unknown',duration_weeks:'Not scheduled',focus_area:'Source review'},
+ 'native-counseling-preparation':{session_type:'Owner planning review',topic:'Evidence and permissions review',client_background:'Not supplied',previous_sessions:'Not supplied',specific_concerns:NOTICE},
+ 'native-outreach-analysis':{programs:sources.outreach,question:'Review saved program sources and approval requirements.'}};
+ for(let i=1;i<=15;i++){
+  added+=(await c.query("INSERT INTO ministry_roles(user_id,ministry,role,assignee,members,schedule,active,planning_reference) VALUES($1,$2,$3,'Unassigned',0,'Not scheduled',FALSE,$4) ON CONFLICT(user_id,planning_reference) DO NOTHING RETURNING id",[actorId,'Local ministry planning','Draft role '+i,'fictional-role-'+i])).rows.length;
+  const title='Fictional local planning note '+i;if(!(await c.query('SELECT id FROM notifications WHERE user_id=$1 AND title=$2',[actorId,title])).rows.length){await c.query('INSERT INTO notifications(user_id,title,message,type,read) VALUES($1,$2,$3,$4,FALSE)',[actorId,title,NOTICE,'info']);added++;}
+  const url='https://example.invalid/sacred-grounds-planning/'+i;if(!(await c.query('SELECT id FROM webhooks WHERE url=$1',[url])).rows.length){await c.query("INSERT INTO webhooks(name,url,events,status) VALUES($1,$2,'[]','disabled')",['Disabled local planning subscription '+i,url]);added++;}
+  for(const[feature,input]of Object.entries({...native,...shortcuts})){const data={...input,planning_notice:NOTICE,planning_reference:'local-draft-'+i};if(!(await c.query('SELECT id FROM ai_results WHERE user_id=$1 AND feature=$2 AND input->>$3=$4 AND output IS NULL',[actorId,feature,'planning_reference',data.planning_reference])).rows.length){await c.query('INSERT INTO ai_results(user_id,feature,input,output,raw_text,model) VALUES($1,$2,$3::jsonb,NULL,NULL,NULL)',[actorId,feature,JSON.stringify(data)]);added++;}}
+  for(const feature of require('../aiWorkspaceFeatures.json')){const fields={input:'Prepare an advisory '+feature.title+' planning review. '+NOTICE,context:NOTICE,goal:'Identify missing evidence and safe review steps for local planning draft '+i,audience:'Authorized organization reviewers',source_data:'Native saved sermon IDs: '+sources.sermons.map(row=>row.id).join(', ')+'; native event IDs: '+sources.events.map(row=>row.id).join(', ')+'. '+NOTICE,constraints:'Preserve permissions, beliefs privacy, consent, safeguarding, finance and delivery approvals.',budget:'Not approved; use existing resources only',deadline:new Date(Date.now()+14*86400000).toISOString().slice(0,10),tone:'Professional',output_format:'Summary and action plan'};const q=await c.query("INSERT INTO ai_workspace_runs(user_id,feature,input,status,idempotency_key) VALUES($1,$2,$3::jsonb,'draft',$4) ON CONFLICT(user_id,feature,idempotency_key) DO NOTHING RETURNING id",[String(actorId),feature.id,JSON.stringify(fields),'fictional-planning-'+i]);added+=q.rows.length;}
+ }
+ await c.query('COMMIT');return {enabled:true,actorId,added};
+ }catch(error){await c.query('ROLLBACK');throw error;}finally{c.release();}
+}
+module.exports={seedNativePlanning,NOTICE};
+if(require.main===module){const fs=require('node:fs'),path=require('node:path'),env=require('dotenv').parse(fs.readFileSync(path.join(__dirname,'../../.env')));env.NODE_ENV=process.env.NODE_ENV||env.NODE_ENV;Object.assign(process.env,env);const pool=require('../db');(async()=>{if(env.NODE_ENV==='production'||env.ENABLE_DEMO_CREDENTIAL_AUTOFILL==='false')return;const alias=['DEMO','SEED_ADMIN','ADMIN','DEFAULT'].find(key=>env[key+'_EMAIL']&&env[key+'_PASSWORD']);if(!alias)throw Error('Configure existing local Demo credentials before adding planning drafts.');const user=(await pool.query('SELECT id,password_hash FROM users WHERE email=$1',[env[alias+'_EMAIL']])).rows[0];if(!user||!await require('bcryptjs').compare(env[alias+'_PASSWORD'],user.password_hash))throw Error('Existing Demo credentials do not match. Accounts were preserved.');const result=await seedNativePlanning({pool,actorId:user.id,env});console.log('Native planning ready: '+result.added+' new ungenerated local drafts.');})().catch(error=>{console.error(error.message);process.exitCode=1;}).finally(()=>pool.end());}

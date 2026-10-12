@@ -1,3 +1,4 @@
+import {nativeFetch,nativeList} from '../components/useNativeTransport';
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
@@ -25,47 +26,18 @@ function Dashboard() {
   const navigate = useNavigate();
   const [stats, setStats] = useState({ members: 0, donations: 0, events: 0, volunteers: 0 });
   const [loading, setLoading] = useState(true);
+  const [error,setError]=useState('');
 
   useEffect(() => {
     fetchStats();
   }, []);
 
-  const apiFetch = async (url) => {
-    const token = localStorage.getItem('token');
-    try {
-      const res = await fetch(url, {
-        headers: { 'Authorization': `Bearer ${token}` },
-      });
-      if (res.ok) return await res.json();
-      return null;
-    } catch {
-      return null;
-    }
-  };
-
   const fetchStats = async () => {
-    setLoading(true);
-    const [membersData, donationsData, eventsData, volunteersData] = await Promise.all([
-      apiFetch('/api/members'),
-      apiFetch('/api/donations'),
-      apiFetch('/api/events'),
-      apiFetch('/api/volunteers'),
-    ]);
-
-    const membersList = Array.isArray(membersData) ? membersData : (membersData?.members || membersData?.data || []);
-    const donationsList = Array.isArray(donationsData) ? donationsData : (donationsData?.donations || donationsData?.data || []);
-    const eventsList = Array.isArray(eventsData) ? eventsData : (eventsData?.events || eventsData?.data || []);
-    const volunteersList = Array.isArray(volunteersData) ? volunteersData : (volunteersData?.volunteers || volunteersData?.data || []);
-
-    const totalDonations = donationsList.reduce((sum, d) => sum + (parseFloat(d.amount) || 0), 0);
-
-    setStats({
-      members: membersList.length,
-      donations: totalDonations,
-      events: eventsList.length,
-      volunteers: volunteersList.length,
-    });
-    setLoading(false);
+    setLoading(true);setError('');
+    try {
+      const [membersList,donationsList,eventsList,volunteersList]=await Promise.all(['members','donations','events','volunteers'].map(async table=>nativeList(await (await nativeFetch('/api/'+table,{headers:{Authorization:'Bearer '+localStorage.getItem('token')}})).json())));
+      setStats({members:membersList.length,donations:donationsList.reduce((sum,row)=>sum+(Number(row.amount)||0),0),events:eventsList.length,volunteers:volunteersList.length});
+    }catch(failure){setError(failure.message||'Saved dashboard data could not be loaded.');}finally{setLoading(false);}
   };
 
   const today = new Date().toLocaleDateString('en-US', {
@@ -75,6 +47,7 @@ function Dashboard() {
     day: 'numeric',
   });
 
+  if(error)return <section role="alert"><h1>Dashboard data could not be loaded</h1><p>{error}</p><button className="btn btn-secondary" onClick={fetchStats}>Retry</button></section>;
   return (
     <div>
       <div className="dashboard-welcome">
@@ -86,7 +59,6 @@ function Dashboard() {
         <div className="stat-card">
           <div className="stat-header">
             <div className="stat-icon blue"><Users size={22} /></div>
-            <span className="card-trend up"><TrendingUp size={14} /></span>
           </div>
           <div className="stat-value">{loading ? '...' : stats.members}</div>
           <div className="stat-label">Total Members</div>
@@ -95,28 +67,25 @@ function Dashboard() {
         <div className="stat-card">
           <div className="stat-header">
             <div className="stat-icon gold"><DollarSign size={22} /></div>
-            <span className="card-trend up"><TrendingUp size={14} /></span>
           </div>
           <div className="stat-value">{loading ? '...' : `$${stats.donations.toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`}</div>
-          <div className="stat-label">Monthly Donations</div>
+          <div className="stat-label">Saved donation total</div>
         </div>
 
         <div className="stat-card">
           <div className="stat-header">
             <div className="stat-icon teal"><Calendar size={22} /></div>
-            <span className="card-trend up"><TrendingUp size={14} /></span>
           </div>
           <div className="stat-value">{loading ? '...' : stats.events}</div>
-          <div className="stat-label">Upcoming Events</div>
+          <div className="stat-label">Saved events</div>
         </div>
 
         <div className="stat-card">
           <div className="stat-header">
             <div className="stat-icon green"><Heart size={22} /></div>
-            <span className="card-trend up"><TrendingUp size={14} /></span>
           </div>
           <div className="stat-value">{loading ? '...' : stats.volunteers}</div>
-          <div className="stat-label">Active Volunteers</div>
+          <div className="stat-label">Saved volunteers</div>
         </div>
       </div>
 

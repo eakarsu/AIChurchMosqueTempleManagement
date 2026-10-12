@@ -1,3 +1,4 @@
+const {saveAIResult,DEFAULT_MODEL}=require('../lib/aiHelpers');
 const express = require('express');
 const router = express.Router();
 const pool = require('../db');
@@ -119,6 +120,7 @@ router.post('/ai-draft', async (req, res) => {
 - Key details: ${key_details || 'Please include relevant information'}`;
 
     const draft = await askAI(prompt, systemPrompt);
+    await saveAIResult(pool,{user_id:req.user.id,feature:'native-announcements-draft',input:{...req.body,...req.params},output:{draft},raw_text:draft,model:DEFAULT_MODEL});
     res.json({ draft });
   } catch (err) {
     console.error('Error drafting announcement:', err);

@@ -1,3 +1,6 @@
+import useNativeTransport, { nativeList } from '../components/useNativeTransport';
+import AIWorkspaceModal from '../components/AIWorkspaceModal';
+import '../components/AIWorkspace.css';
 import React, { useState, useEffect } from 'react';
 import { Search, Plus, BookOpen, Sparkles } from 'lucide-react';
 import DetailModal from '../components/DetailModal';
@@ -9,6 +12,8 @@ const emptySermon = {
 };
 
 function Sermons() {
+  const {request,cancel:cancelAI,busy:requestBusy,reviewDialog}=useNativeTransport();
+  const [loadError,setLoadError]=useState('');
   const [sermons, setSermons] = useState([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
@@ -33,14 +38,14 @@ function Sermons() {
   };
 
   const fetchSermons = async () => {
-    setLoading(true);
+    setLoading(true);setLoadError('');
     try {
-      const res = await fetch('/api/sermons', { headers });
+      const res = await request('/api/sermons', { headers });
       const data = await res.json();
-      const list = Array.isArray(data) ? data : (data.sermons || data.data || []);
+      const list = nativeList(data);
       setSermons(list);
-    } catch {
-      showToast('Failed to fetch sermons', 'error');
+    } catch (failure) { setLoadError(failure.message || 'Saved data could not be loaded.');
+
     }
     setLoading(false);
   };
@@ -54,26 +59,26 @@ function Sermons() {
     try {
       const url = editingId ? `/api/sermons/${editingId}` : '/api/sermons';
       const method = editingId ? 'PUT' : 'POST';
-      const res = await fetch(url, { method, headers, body: JSON.stringify(body) });
+      const res = await request(url, { method, headers, body: JSON.stringify(body) });
       if (!res.ok) throw new Error('Failed to save');
       showToast(editingId ? 'Sermon updated!' : 'Sermon created!');
       setShowForm(false);
       setEditingId(null);
       setFormData(emptySermon);
       fetchSermons();
-    } catch {
+    } catch (failure) { if(failure.name==='AbortError'){setAiLoading(false);return;}
       showToast('Failed to save sermon', 'error');
     }
   };
 
   const handleDelete = async (id) => {
     try {
-      await fetch(`/api/sermons/${id}`, { method: 'DELETE', headers });
+      await request(`/api/sermons/${id}`, { method: 'DELETE', headers });
       showToast('Sermon deleted');
       setShowDetail(false);
       setSelected(null);
       fetchSermons();
-    } catch {
+    } catch (failure) { if(failure.name==='AbortError'){setAiLoading(false);return;}
       showToast('Failed to delete', 'error');
     }
   };
@@ -100,12 +105,12 @@ function Sermons() {
     setAiTitle('AI Sermon Summary');
     setAiResponse('');
     try {
-      const res = await fetch(`/api/sermons/${sermon._id || sermon.id}/ai-summarize`, {
+      const res = await request(`/api/sermons/${sermon._id || sermon.id}/ai-summarize`, {
         method: 'POST', headers,
       });
       const data = await res.json();
       setAiResponse(data.summary || data.response || data.message || data.result || JSON.stringify(data));
-    } catch {
+    } catch (failure) { if(failure.name==='AbortError'){setAiLoading(false);return;}
       setAiResponse('Failed to generate summary. Please try again.');
     }
     setAiLoading(false);
@@ -116,12 +121,12 @@ function Sermons() {
     setAiTitle('AI Topic Suggestions');
     setAiResponse('');
     try {
-      const res = await fetch('/api/sermons/ai-generate-topics', {
+      const res = await request('/api/sermons/ai-generate-topics', {
         method: 'POST', headers,
       });
       const data = await res.json();
       setAiResponse(data.topics || data.response || data.message || data.result || JSON.stringify(data));
-    } catch {
+    } catch (failure) { if(failure.name==='AbortError'){setAiLoading(false);return;}
       setAiResponse('Failed to generate topics. Please try again.');
     }
     setAiLoading(false);
@@ -136,8 +141,12 @@ function Sermons() {
 
   if (loading) return <div className="loading-container"><div className="loading-spinner lg" /><p>Loading sermons...</p></div>;
 
+  if(loadError)return <section role="alert" className="page-container"><h1>Saved sermons could not be loaded</h1><p>{loadError}</p><button type="button" className="btn btn-secondary" onClick={fetchSermons}>Retry</button></section>;
+
   return (
     <div>
+      {reviewDialog}
+      {requestBusy&&<p role="status">Generating with OpenRouter… <button type="button" className="btn btn-secondary" onClick={cancelAI}>Cancel AI request</button></p>}
       <div className="page-header">
         <div>
           <h1>Sermon Management</h1>
@@ -160,7 +169,7 @@ function Sermons() {
         </div>
       </div>
 
-      <AIResponseDisplay response={aiResponse} title={aiTitle} isLoading={aiLoading} />
+      <AIResponseDisplay response={aiResponse} title={aiTitle} isLoading={aiLoading&&!reviewDialog} />
 
       {filtered.length === 0 ? (
         <div className="empty-state">
@@ -214,7 +223,7 @@ function Sermons() {
           onEdit={() => handleEdit(selected)}
           onDelete={() => handleDelete(selected._id || selected.id)}
         >
-          <div className="detail-view">
+
             <div className="detail-row">
               <div className="detail-field">
                 <span className="field-label">Speaker</span>
@@ -264,8 +273,8 @@ function Sermons() {
                 <Sparkles size={16} /> AI Summarize
               </button>
             </div>
-            <AIResponseDisplay response={aiResponse} title={aiTitle} isLoading={aiLoading} />
-          </div>
+            <AIResponseDisplay response={aiResponse} title={aiTitle} isLoading={aiLoading&&!reviewDialog} />
+
         </DetailModal>
       )}
 

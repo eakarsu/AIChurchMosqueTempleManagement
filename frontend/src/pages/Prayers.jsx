@@ -1,3 +1,6 @@
+import useNativeTransport, { nativeList } from '../components/useNativeTransport';
+import AIWorkspaceModal from '../components/AIWorkspaceModal';
+import '../components/AIWorkspace.css';
 import React, { useState, useEffect } from 'react';
 import { Search, Plus, Star, Heart, Sparkles } from 'lucide-react';
 import DetailModal from '../components/DetailModal';
@@ -9,6 +12,8 @@ const emptyPrayer = {
 };
 
 function Prayers() {
+  const {request,cancel:cancelAI,busy:requestBusy,reviewDialog}=useNativeTransport();
+  const [loadError,setLoadError]=useState('');
   const [prayers, setPrayers] = useState([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
@@ -35,14 +40,14 @@ function Prayers() {
   };
 
   const fetchPrayers = async () => {
-    setLoading(true);
+    setLoading(true);setLoadError('');
     try {
-      const res = await fetch('/api/prayers', { headers });
+      const res = await request('/api/prayers', { headers });
       const data = await res.json();
-      const list = Array.isArray(data) ? data : (data.prayers || data.data || []);
+      const list = nativeList(data);
       setPrayers(list);
-    } catch {
-      showToast('Failed to fetch prayers', 'error');
+    } catch (failure) { setLoadError(failure.message || 'Saved data could not be loaded.');
+
     }
     setLoading(false);
   };
@@ -52,26 +57,26 @@ function Prayers() {
     try {
       const url = editingId ? `/api/prayers/${editingId}` : '/api/prayers';
       const method = editingId ? 'PUT' : 'POST';
-      const res = await fetch(url, { method, headers, body: JSON.stringify(formData) });
+      const res = await request(url, { method, headers, body: JSON.stringify(formData) });
       if (!res.ok) throw new Error('Failed to save');
       showToast(editingId ? 'Prayer request updated!' : 'Prayer request submitted!');
       setShowForm(false);
       setEditingId(null);
       setFormData(emptyPrayer);
       fetchPrayers();
-    } catch {
+    } catch (failure) { if(failure.name==='AbortError'){setAiLoading(false);return;}
       showToast('Failed to save prayer request', 'error');
     }
   };
 
   const handleDelete = async (id) => {
     try {
-      await fetch(`/api/prayers/${id}`, { method: 'DELETE', headers });
+      await request(`/api/prayers/${id}`, { method: 'DELETE', headers });
       showToast('Prayer request deleted');
       setShowDetail(false);
       setSelected(null);
       fetchPrayers();
-    } catch {
+    } catch (failure) { if(failure.name==='AbortError'){setAiLoading(false);return;}
       showToast('Failed to delete', 'error');
     }
   };
@@ -96,7 +101,7 @@ function Prayers() {
     setTimeout(() => setAnimatingId(null), 400);
 
     try {
-      await fetch(`/api/prayers/${id}/pray`, { method: 'PUT', headers });
+      await request(`/api/prayers/${id}/pray`, { method: 'PUT', headers });
       setPrayedFor(prev => new Set([...prev, id]));
       setPrayers(prev => prev.map(p => {
         if ((p._id || p.id) === id) {
@@ -104,7 +109,7 @@ function Prayers() {
         }
         return p;
       }));
-    } catch {
+    } catch (failure) { if(failure.name==='AbortError'){setAiLoading(false);return;}
       // silently fail
     }
   };
@@ -114,12 +119,12 @@ function Prayers() {
     setAiTitle('AI Spiritual Guidance');
     setAiResponse('');
     try {
-      const res = await fetch(`/api/prayers/${prayer._id || prayer.id}/ai-guidance`, {
+      const res = await request(`/api/prayers/${prayer._id || prayer.id}/ai-guidance`, {
         method: 'POST', headers,
       });
       const data = await res.json();
       setAiResponse(data.guidance || data.ai_guidance || data.response || data.message || data.result || JSON.stringify(data));
-    } catch {
+    } catch (failure) { if(failure.name==='AbortError'){setAiLoading(false);return;}
       setAiResponse('Failed to generate guidance. Please try again.');
     }
     setAiLoading(false);
@@ -127,17 +132,23 @@ function Prayers() {
 
   const filtered = prayers.filter(p => {
     const s = search.toLowerCase();
-    return (p.requester_name || '').toLowerCase().includes(s) ||
+
+
+  return (p.requester_name || '').toLowerCase().includes(s) ||
       (p.prayer_text || '').toLowerCase().includes(s) ||
       (p.request_type || '').toLowerCase().includes(s);
   });
 
   const updateField = (field, value) => setFormData(prev => ({ ...prev, [field]: value }));
 
+if(loadError)return <section role="alert" className="page-container"><h1>Saved prayers could not be loaded</h1><p>{loadError}</p><button type="button" className="btn btn-secondary" onClick={fetchPrayers}>Retry</button></section>;
+
   if (loading) return <div className="loading-container"><div className="loading-spinner lg" /><p>Loading prayer requests...</p></div>;
 
   return (
     <div>
+      {reviewDialog}
+      {requestBusy&&<p role="status">Generating with OpenRouter… <button type="button" className="btn btn-secondary" onClick={cancelAI}>Cancel AI request</button></p>}
       <div className="page-header">
         <div>
           <h1>Prayer Requests</h1>
@@ -157,7 +168,7 @@ function Prayers() {
         </div>
       </div>
 
-      <AIResponseDisplay response={aiResponse} title={aiTitle} isLoading={aiLoading} />
+      <AIResponseDisplay response={aiResponse} title={aiTitle} isLoading={aiLoading&&!reviewDialog} />
 
       {filtered.length === 0 ? (
         <div className="empty-state">
@@ -214,7 +225,7 @@ function Prayers() {
           onEdit={() => handleEdit(selected)}
           onDelete={() => handleDelete(selected._id || selected.id)}
         >
-          <div className="detail-view">
+
             <div className="detail-row">
               <div className="detail-field">
                 <span className="field-label">Requester</span>
@@ -252,8 +263,8 @@ function Prayers() {
                 <Sparkles size={16} /> Get Spiritual Guidance
               </button>
             </div>
-            <AIResponseDisplay response={aiResponse} title={aiTitle} isLoading={aiLoading} />
-          </div>
+            <AIResponseDisplay response={aiResponse} title={aiTitle} isLoading={aiLoading&&!reviewDialog} />
+
         </DetailModal>
       )}
 

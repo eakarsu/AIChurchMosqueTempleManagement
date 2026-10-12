@@ -1,3 +1,4 @@
+const {saveAIResult,DEFAULT_MODEL}=require('../lib/aiHelpers');
 const express = require('express');
 const router = express.Router();
 const pool = require('../db');
@@ -120,9 +121,12 @@ router.post('/ai-curriculum', async (req, res) => {
 - Desired duration: ${duration_weeks || '8-12'} weeks
 - Focus area: ${focus_area || 'General spiritual growth'}
 
+Saved group source records: ${JSON.stringify(req.body.groups || [])}
+
 Please provide a detailed curriculum outline with weekly topics, discussion questions, and suggested activities.`;
 
     const curriculum = await askAI(prompt, systemPrompt);
+    await saveAIResult(pool,{user_id:req.user.id,feature:'native-smallgroups-curriculum',input:{...req.body,...req.params},output:{curriculum},raw_text:curriculum,model:DEFAULT_MODEL});
     res.json({ curriculum });
   } catch (err) {
     console.error('Error generating curriculum suggestion:', err);

@@ -1,120 +1,18 @@
-import React, { useEffect, useState } from 'react';
-import { History, Trash2, Eye, X } from 'lucide-react';
-
-const FEATURES = [
-  '', 'sermon-analyzer', 'donation-insights', 'prayer-guidance', 'member-engagement',
-  'event-planner', 'outreach-strategy', 'sermon-qa', 'volunteer-burnout',
-  'prayer-categorize', 'facility-optimizer',
-];
-
-export default function AIResults() {
-  const [results, setResults] = useState([]);
-  const [pagination, setPagination] = useState({ page: 1, limit: 20, total: 0, total_pages: 0 });
-  const [feature, setFeature] = useState('');
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState('');
-  const [selected, setSelected] = useState(null);
-
-  const token = localStorage.getItem('token');
-  const headers = { Authorization: `Bearer ${token}` };
-
-  const load = async (page = 1) => {
-    setLoading(true);
-    setError('');
-    try {
-      const params = new URLSearchParams({ page, limit: 20 });
-      if (feature) params.set('feature', feature);
-      const res = await fetch(`/api/ai-results?${params.toString()}`, { headers });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || 'Failed to load AI results');
-      setResults(data.data || []);
-      setPagination(data.pagination || { page: 1, limit: 20, total: 0, total_pages: 0 });
-    } catch (e) {
-      setError(e.message);
-    }
-    setLoading(false);
-  };
-
-  useEffect(() => { load(1); /* eslint-disable-next-line */ }, [feature]);
-
-  const handleDelete = async (id) => {
-    if (!window.confirm('Delete this AI result?')) return;
-    await fetch(`/api/ai-results/${id}`, { method: 'DELETE', headers });
-    load(pagination.page);
-  };
-
-  return (
-    <div className="page-container">
-      <div className="page-header">
-        <h1><History size={24} /> AI Results History</h1>
-        <p>Audit prior AI outputs (persisted JSONB in ai_results).</p>
-      </div>
-
-      <div style={{ display: 'flex', gap: 12, marginBottom: 16 }}>
-        <select value={feature} onChange={(e) => setFeature(e.target.value)} className="form-input" style={{ width: 280, padding: 8 }}>
-          {FEATURES.map(f => <option key={f} value={f}>{f || 'All features'}</option>)}
-        </select>
-        <button onClick={() => load(pagination.page)} disabled={loading} className="btn btn-secondary">
-          {loading ? 'Loading...' : 'Refresh'}
-        </button>
-      </div>
-
-      {error && <div className="alert alert-danger" style={{ background: '#fee', padding: 12, color: '#c00', marginBottom: 16 }}>{error}</div>}
-
-      <div className="card">
-        <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-          <thead>
-            <tr style={{ background: '#f5f5f5' }}>
-              <th style={{ padding: 12, textAlign: 'left' }}>ID</th>
-              <th style={{ padding: 12, textAlign: 'left' }}>Feature</th>
-              <th style={{ padding: 12, textAlign: 'left' }}>Model</th>
-              <th style={{ padding: 12, textAlign: 'left' }}>Created</th>
-              <th style={{ padding: 12, textAlign: 'left' }}>Actions</th>
-            </tr>
-          </thead>
-          <tbody>
-            {results.length === 0 ? (
-              <tr><td colSpan="5" style={{ textAlign: 'center', padding: 24 }}>No AI results yet.</td></tr>
-            ) : results.map(r => (
-              <tr key={r.id} style={{ borderTop: '1px solid #eee' }}>
-                <td style={{ padding: 12 }}>{r.id}</td>
-                <td style={{ padding: 12 }}><span style={{ background: '#e0e7ff', padding: '4px 8px', borderRadius: 4 }}>{r.feature}</span></td>
-                <td style={{ padding: 12, fontSize: 12 }}>{r.model}</td>
-                <td style={{ padding: 12 }}>{new Date(r.created_at).toLocaleString()}</td>
-                <td style={{ padding: 12 }}>
-                  <button onClick={() => setSelected(r)} className="btn btn-secondary" style={{ padding: '4px 8px', marginRight: 8 }}><Eye size={14} /> View</button>
-                  <button onClick={() => handleDelete(r.id)} className="btn btn-danger" style={{ padding: '4px 8px' }}><Trash2 size={14} /></button>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-
-      <div style={{ display: 'flex', gap: 8, marginTop: 16, alignItems: 'center', justifyContent: 'center' }}>
-        <button disabled={pagination.page <= 1} onClick={() => load(pagination.page - 1)} className="btn btn-secondary">Prev</button>
-        <span>Page {pagination.page} of {pagination.total_pages || 1} ({pagination.total} total)</span>
-        <button disabled={pagination.page >= pagination.total_pages} onClick={() => load(pagination.page + 1)} className="btn btn-secondary">Next</button>
-      </div>
-
-      {selected && (
-        <div onClick={() => setSelected(null)} style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 }}>
-          <div onClick={(e) => e.stopPropagation()} style={{ maxWidth: 800, width: '90%', maxHeight: '85vh', overflow: 'auto', background: 'white', padding: 24, borderRadius: 8 }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
-              <h2>Result #{selected.id} - {selected.feature}</h2>
-              <button onClick={() => setSelected(null)} className="btn btn-ghost"><X size={20} /></button>
-            </div>
-            <h3>Input</h3>
-            <pre style={{ background: '#f5f5f5', padding: 12, borderRadius: 4, overflow: 'auto' }}>
-              {JSON.stringify(selected.input, null, 2)}
-            </pre>
-            <h3>Output</h3>
-            <pre style={{ background: '#f5f5f5', padding: 12, borderRadius: 4, overflow: 'auto' }}>
-              {JSON.stringify(selected.output, null, 2)}
-            </pre>
-          </div>
-        </div>
-      )}
-    </div>
-  );
+import React,{useEffect,useRef,useState} from 'react';
+import {useNavigate} from 'react-router-dom';
+import Modal from '../components/AIWorkspaceModal';
+import AIReport from '../components/AIReport';
+import {nativeFetch,nativeList} from '../components/useNativeTransport';
+import {TOOLS} from './AITools';
+const nativeOwners=[['native-sermons-summary','Sermon summaries'],['native-sermons-topics','Sermon topic planning'],['donation-thank-you','Donation thank-you drafts'],['member-engagement-suggestions','Member engagement suggestions'],['native-events-description','Event description drafts'],['native-volunteers-matches','Volunteer matching review'],['native-prayers-guidance','Prayer guidance'],['native-facilities-suggestions','Facility optimization'],['native-announcements-draft','Announcement drafts'],['native-attendance-insights','Attendance insights'],['native-smallgroups-curriculum','Small-group curriculum'],['native-counseling-preparation','Counseling preparation'],['native-outreach-analysis','Outreach impact review']].map(([key,label])=>({key,label}));
+const historyOwners=[...TOOLS,...nativeOwners];
+export default function AIResults(){
+ const navigate=useNavigate(),[rows,setRows]=useState([]),[feature,setFeature]=useState(''),[loading,setLoading]=useState(true),[error,setError]=useState(''),[selected,setSelected]=useState(null),[deleting,setDeleting]=useState(false),[actionError,setActionError]=useState('');const active=useRef(null),[editingNotes,setEditingNotes]=useState(false),[note,setNote]=useState('');
+ const headers=()=>({Authorization:'Bearer '+localStorage.getItem('token')});
+ const load=async()=>{active.current?.abort();const controller=new AbortController();active.current=controller;setLoading(true);setError('');try{const response=await nativeFetch('/api/ai-results?limit=100'+(feature?'&feature='+encodeURIComponent(feature):''),{headers:headers(),signal:controller.signal});const data=nativeList(await response.json());if(active.current===controller&&!controller.signal.aborted)setRows(data);}catch(failure){if(active.current===controller&&!controller.signal.aborted)setError(failure.message||'Saved reports could not be loaded.');}finally{if(active.current===controller&&!controller.signal.aborted){active.current=null;setLoading(false);}}};
+ useEffect(()=>{load();return()=>{active.current?.abort();active.current=null;};},[feature]);
+ const close=()=>{setSelected(null);setDeleting(false);setActionError('');setEditingNotes(false);};
+ const remove=async()=>{try{await nativeFetch('/api/ai-results/'+selected.id,{method:'DELETE',headers:headers()});close();load();}catch(failure){setActionError(failure.message||'The saved report could not be deleted.');}};
+ const saveNotes=async()=>{try{const response=await nativeFetch('/api/ai-results/'+selected.id,{method:'PATCH',headers:{...headers(),'Content-Type':'application/json'},body:JSON.stringify({review_notes:note})});const saved=await response.json();if(String(saved.id)!==String(selected.id))throw Error('The saved report service returned an invalid record.');close();load();}catch(failure){setActionError(failure.message||'Owner notes could not be saved.');}};
+ return <main className="page-container"><header className="page-header"><h1>AI Report History</h1><p>Saved provider reports and ungenerated planning drafts. Review the original sources before taking action.</p></header><select aria-label="Report feature" value={feature} onChange={event=>setFeature(event.target.value)}><option value="">All features</option>{historyOwners.map(tool=><option key={tool.key} value={tool.key}>{tool.label}</option>)}</select><button className="btn btn-secondary" onClick={load}>Refresh</button>{loading?<p role="status">Loading saved reports…</p>:error?<section role="alert"><h2>Saved reports could not be loaded</h2><p>{error}</p><button className="btn btn-secondary" onClick={load}>Retry</button></section>:<section className="card"><p className="ai-muted">Showing up to100 retained reports for the selected feature.</p>{rows.length?rows.map(row=><button key={row.id} type="button" className="ai-history-row" onClick={()=>{setSelected(row);setDeleting(false);setActionError('');setEditingNotes(false);}}><span><strong>{historyOwners.find(tool=>tool.key===row.feature)?.label||row.feature.replace(/-/g,' ')}</strong><br/>{row.output==null?'Planning draft · Not generated':'Saved provider report'} · {new Date(row.created_at).toLocaleString()}</span><span>Open details →</span></button>):<p>No saved reports are available.</p>}</section>}{selected&&<Modal title={deleting?'Delete saved report?':'Saved report details'} onClose={close} footer={<><button className="btn btn-secondary" onClick={close}>Cancel</button>{!deleting&&!editingNotes&&<button className="btn btn-primary" onClick={()=>{const tool=TOOLS.find(tool=>tool.key===selected.feature);if(tool&&tool.fields.every(f=>Object.hasOwn(selected.input||{},f.name)))navigate('/ai-tools',{state:{reportId:selected.id,feature:selected.feature,input:Object.fromEntries(tool.fields.map(f=>{const value=selected.input?.[f.name];return[f.name,f.type==='json'?JSON.stringify(value||[],null,2):f.type==='list'&&Array.isArray(value)?value.join(', '):value==null?'':String(value)];}))}});else{setNote(selected.review_notes||'');setEditingNotes(true);}}}>Edit</button>}{editingNotes&&<button className="btn btn-primary" onClick={saveNotes}>Save owner notes</button>}{!editingNotes&&<button className="btn btn-danger" onClick={()=>deleting?remove():setDeleting(true)}>{deleting?'Confirm delete':'Delete'}</button>}</>}>{actionError&&<p role="alert">{actionError}</p>}{editingNotes?<label>Owner review notes<textarea value={note} onChange={event=>setNote(event.target.value)}/><p>Review notes preserve the original native inputs, provider answer, permissions and approvals.</p></label>:deleting?<p>Delete saved report #{selected.id}? This removes the local retained report; it does not change its native source records.</p>:<>{selected.review_notes&&<p><strong>Owner review notes:</strong> {selected.review_notes}</p>}<h3>Request inputs</h3><AIReport response={selected.input} title="Saved request"/>{selected.output==null?<p>No provider answer has been generated. This is a saved planning draft.</p>:<AIReport response={selected.output} title="Saved provider report"/>}</>}</Modal>}</main>;
 }

@@ -1,3 +1,4 @@
+const {saveAIResult,DEFAULT_MODEL}=require('../lib/aiHelpers');
 const express = require('express');
 const router = express.Router();
 const pool = require('../db');
@@ -174,6 +175,7 @@ router.post('/ai-insights', async (req, res) => {
     const prompt = `Here is our attendance data:\n${JSON.stringify(attendanceData.rows, null, 2)}\n\n${question || 'Please analyze this attendance data and provide insights on trends, patterns, and recommendations for increasing engagement.'}`;
 
     const insights = await askAI(prompt, systemPrompt);
+    await saveAIResult(pool,{user_id:req.user.id,feature:'native-attendance-insights',input:{...req.body,...req.params},output:{insights},raw_text:insights,model:DEFAULT_MODEL});
     res.json({ insights });
   } catch (err) {
     console.error('Error generating attendance insights:', err);

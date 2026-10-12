@@ -1,5 +1,7 @@
 // Shared AI helpers: model standardization, parseAIJson 3-strategy, ai_results table.
 const fetch = require('node-fetch');
+const {currentSignal} = require('../services/nativeAIContext');
+const persistNativeAI = require('../services/persistNativeAI');
 
 const DEFAULT_MODEL = process.env.OPENROUTER_MODEL || 'anthropic/claude-3-5-sonnet-20241022';
 const OPENROUTER_URL = 'https://openrouter.ai/api/v1/chat/completions';
@@ -20,6 +22,7 @@ async function callOpenRouter(systemPrompt, userPrompt, opts = {}) {
 
   const response = await fetch(OPENROUTER_URL, {
     method: 'POST',
+    signal: opts.signal || currentSignal(),
     headers: {
       'Authorization': `Bearer ${apiKey}`,
       'Content-Type': 'application/json',
@@ -79,22 +82,23 @@ async function ensureAIResultsTable(pool) {
     CREATE INDEX IF NOT EXISTS idx_ai_results_user ON ai_results(user_id);
     CREATE INDEX IF NOT EXISTS idx_ai_results_created_at ON ai_results(created_at DESC);
   `);
+  await pool.query('ALTER TABLE ai_results ADD COLUMN IF NOT EXISTS review_notes TEXT');
   aiResultsEnsured = true;
 }
 
-async function saveAIResult(pool, { user_id, feature, input, output, raw_text, model }) {
-  try {
+async function saveAIResult(pool, { user_id, feature, input, output, raw_text, model, id, nativeWrite }) {
+    const signal = currentSignal();
+    if (signal?.aborted) throw Object.assign(new Error('The request was cancelled.'), {name:'AbortError'});
     await ensureAIResultsTable(pool);
-    const result = await pool.query(
-      `INSERT INTO ai_results (user_id, feature, input, output, raw_text, model)
-       VALUES ($1, $2, $3, $4, $5, $6) RETURNING id, created_at`,
-      [user_id || null, feature, JSON.stringify(input || {}), JSON.stringify(output || null), raw_text || null, model || DEFAULT_MODEL]
-    );
+    const values=[user_id || null, feature, JSON.stringify(input || {}), JSON.stringify(output || null), raw_text || null, model || DEFAULT_MODEL];
+    const result = await persistNativeAI(pool, signal || new AbortController().signal, async client => {
+      if(nativeWrite)await nativeWrite(client);
+      return id === undefined
+        ? client.query(`INSERT INTO ai_results (user_id, feature, input, output, raw_text, model) VALUES ($1,$2,$3,$4,$5,$6) RETURNING id,created_at`, values)
+        : client.query(`UPDATE ai_results SET input=$3,output=$4,raw_text=$5,model=$6 WHERE user_id=$1 AND feature=$2 AND id=$7 RETURNING id,created_at`, [...values,id]);
+    });
+    if(!result.rows.length) throw Error('The saved report no longer exists.');
     return result.rows[0];
-  } catch (e) {
-    console.warn('saveAIResult failed:', e.message);
-    return null;
-  }
 }
 
 module.exports = { callOpenRouter, parseAIJson, ensureAIResultsTable, saveAIResult, DEFAULT_MODEL };

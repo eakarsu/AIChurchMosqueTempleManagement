@@ -1,3 +1,4 @@
+const {saveAIResult,DEFAULT_MODEL}=require('../lib/aiHelpers');
 const express = require('express');
 const router = express.Router();
 const pool = require('../db');
@@ -129,6 +130,7 @@ Please provide:
 5. Potential homework or follow-up actions`;
 
     const preparation = await askAI(prompt, systemPrompt);
+    await saveAIResult(pool,{user_id:req.user.id,feature:'native-counseling-preparation',input:{...req.body,...req.params},output:{preparation},raw_text:preparation,model:DEFAULT_MODEL});
     res.json({ preparation });
   } catch (err) {
     console.error('Error generating session preparation:', err);

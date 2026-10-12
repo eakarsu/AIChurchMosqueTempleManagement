@@ -60,6 +60,7 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 set -a
 . "$ROOT/.env"
 set +a
+(cd "$ROOT" && node backend/scripts/native-planning.cjs)
 (cd "$ROOT/backend" && npm start) & BACKEND_PID=$!
 (cd "$ROOT/frontend" && npm run dev -- --host 127.0.0.1 --port "${FRONTEND_PORT:-3000}") & FRONTEND_PID=$!
 cleanup(){ kill "$BACKEND_PID" "$FRONTEND_PID" 2>/dev/null || true; wait "$BACKEND_PID" "$FRONTEND_PID" 2>/dev/null || true; }

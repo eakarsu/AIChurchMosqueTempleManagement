@@ -1,3 +1,4 @@
+const {saveAIResult,DEFAULT_MODEL}=require('../lib/aiHelpers');
 const express = require('express');
 const router = express.Router();
 const pool = require('../db');
@@ -111,7 +112,7 @@ router.post('/ai-optimize', async (req, res) => {
     if (facility_data) {
       facilitiesInfo = JSON.stringify(facility_data);
     } else {
-      const result = await pool.query('SELECT name, capacity, amenities, hourly_rate, status, booking_date, booking_time FROM facilities');
+      const result = await pool.query('SELECT * FROM facilities');
       facilitiesInfo = JSON.stringify(result.rows);
     }
 
@@ -119,6 +120,7 @@ router.post('/ai-optimize', async (req, res) => {
     const prompt = `Analyze the following facility data and suggest optimal scheduling and usage strategies:\n\n${facilitiesInfo}`;
 
     const suggestions = await askAI(prompt, systemPrompt);
+    await saveAIResult(pool,{user_id:req.user.id,feature:'native-facilities-suggestions',input:{...req.body,...req.params},output:{suggestions},raw_text:suggestions,model:DEFAULT_MODEL});
     res.json({ suggestions });
   } catch (err) {
     console.error('Error optimizing facilities:', err);

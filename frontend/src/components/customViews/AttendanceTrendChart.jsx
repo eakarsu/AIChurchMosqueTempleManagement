@@ -1,3 +1,4 @@
+import {nativeFetch} from '../useNativeTransport';
 import React, { useEffect, useState } from 'react';
 import { TrendingUp, Users, Eye } from 'lucide-react';
 
@@ -6,22 +7,15 @@ function AttendanceTrendChart() {
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState(null);
 
-  useEffect(() => {
-    const token = localStorage.getItem('token');
-    fetch('/api/custom-views/attendance-trend?weeks=12', {
-      headers: { Authorization: `Bearer ${token}` },
-    })
-      .then((r) => (r.ok ? r.json() : Promise.reject(r.status)))
-      .then(setData)
-      .catch((e) => setErr(String(e)))
-      .finally(() => setLoading(false));
-  }, []);
+  const load=async()=>{setLoading(true);setErr(null);try{const response=await nativeFetch('/api/custom-views/attendance-trend?weeks=12',{headers:{Authorization:'Bearer '+localStorage.getItem('token')}});const body=await response.json();if(!Array.isArray(body?.series))throw Error('Saved chart returned an invalid response.');setData(body);}catch(failure){setErr(failure.message);}finally{setLoading(false);}};
+  useEffect(()=>{load();},[]);
 
   if (loading) return <div style={{ padding: 16, color: '#94a3b8' }}>Loading attendance trend...</div>;
-  if (err) return <div style={{ padding: 16, color: '#ef4444' }}>Error: {err}</div>;
+  if (err) return <div role="alert"><p>Saved chart could not be loaded: {err}</p><button className="btn btn-secondary" onClick={load}>Retry</button></div>;
   if (!data) return null;
+  if(!data.series.length)return <p>No saved attendance records to chart.</p>;
 
-  const maxVal = Math.max(...data.series.map((d) => d.total_attendees));
+  const maxVal = Math.max(1,...data.series.map((d) => d.total_attendees));
 
   return (
     <div style={{ background: '#1e293b', borderRadius: 12, padding: 24, border: '1px solid #334155' }}>
@@ -41,7 +35,7 @@ function AttendanceTrendChart() {
         <div style={{ background: '#0f172a', padding: 12, borderRadius: 8, flex: 1, minWidth: 120 }}>
           <div style={{ color: '#94a3b8', fontSize: 12 }}>Growth</div>
           <div style={{ color: data.growth_pct >= 0 ? '#4ade80' : '#ef4444', fontSize: 22, fontWeight: 700 }}>
-            {data.growth_pct >= 0 ? '+' : ''}{data.growth_pct}%
+            {data.growth_pct==null?'Unavailable':(data.growth_pct>=0?'+':'')+data.growth_pct+'%'}
           </div>
         </div>
       </div>
@@ -58,7 +52,7 @@ function AttendanceTrendChart() {
       </div>
       <div style={{ display: 'flex', gap: 20, marginTop: 16, color: '#94a3b8', fontSize: 13 }}>
         <span><Users size={14} style={{ verticalAlign: 'middle' }} /> Across all services</span>
-        <span><Eye size={14} style={{ verticalAlign: 'middle' }} /> Includes online viewers</span>
+        <span><Eye size={14} style={{ verticalAlign: 'middle' }} /> Online viewers are stored separately</span>
       </div>
     </div>
   );

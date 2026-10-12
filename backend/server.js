@@ -32,6 +32,10 @@ app.use(cors({
 }));
 
 app.use(express.json());
+app.use(require('./services/nativeAIContext').nativeAIContext);
+// Existing protected native screens require the same authenticated identity.
+const nativeAuth = require('./middleware/auth');
+app.use((req,res,next)=>/^\/api\/(?:sermons|donations|members|events|volunteers|prayers|facilities|announcements|attendance|small-groups|counseling|outreach|calendar|custom-views)(?:\/|$)/.test(req.path)?nativeAuth(req,res,next):next());
 
 // Health check
 app.get('/api/health', (req, res) => {
@@ -65,6 +69,14 @@ app.use('/api/custom-views', require('./routes/customViews'));
 app.use('/api/governed-programs', require('./routes/governedPrograms'));
 
 // Error handling middleware
+
+// Advisory AI reports only; native execution and approval routes stay unchanged.
+const aiWorkspaceSupport = require("./aiWorkspaceAdapters.cjs");
+const aiWorkspaceDatabase = require("./db.js");
+app.use('/api/report-workspace', require("./aiWorkspace.cjs").createAIWorkspaceRouter({
+  pool: aiWorkspaceDatabase, authenticateToken: require("./middleware/auth.js"),
+  aiRateLimiter: aiWorkspaceSupport.createWorkspaceLimiter(), features: require("./aiWorkspaceFeatures.json"),
+}));
 app.use((err, req, res, next) => {
   console.error('Unhandled error:', err);
   res.status(500).json({ error: 'Internal server error', message: err.message });
@@ -83,6 +95,7 @@ app.use('/api/scripture-rag', require('./routes/sermonScriptureRag')); // apply 
 app.use('/api/worship-ops', require('./routes/worshipOpsStream')); // apply pass 6 — audit custom suggestion
 
 app.use('/api/denomination-white-label', require('./routes/denominationWhiteLabel')); // apply pass 6 — audit custom suggestion
+
 
 app.listen(PORT, () => {
   console.log(`Server running on port ${PORT}`);

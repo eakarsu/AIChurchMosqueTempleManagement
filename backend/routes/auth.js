@@ -7,6 +7,18 @@ const authMiddleware = require('../middleware/auth');
 
 const JWT_SECRET = process.env.JWT_SECRET;
 
+router.get('/demo-credentials', async (_req, res) => {
+  if (process.env.NODE_ENV === 'production' || process.env.ENABLE_DEMO_CREDENTIAL_AUTOFILL === 'false') return res.status(404).json({ error: 'Local Demo login is disabled.' });
+  const alias = ['DEMO', 'SEED_ADMIN', 'ADMIN', 'DEFAULT'].find(key => process.env[key + '_EMAIL'] && process.env[key + '_PASSWORD']);
+  if (!alias) return res.status(503).json({ error: 'Configure the existing local Demo credentials.' });
+  const email = process.env[alias + '_EMAIL'], password = process.env[alias + '_PASSWORD'];
+  try {
+    const result = await pool.query('SELECT password_hash FROM users WHERE email = $1', [email]);
+    if (!result.rows.length || !await bcrypt.compare(password, result.rows[0].password_hash)) return res.status(503).json({ error: 'Configured Demo credentials do not match an existing account. Accounts were preserved.' });
+    res.set('Cache-Control', 'no-store'); return res.json({ email, password });
+  } catch (_) { return res.status(503).json({ error: 'Demo account storage is unavailable. Try again.' }); }
+});
+
 // POST /api/auth/login
 router.post('/login', async (req, res) => {
   try {

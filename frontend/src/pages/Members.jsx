@@ -1,3 +1,6 @@
+import useNativeTransport, { nativeList } from '../components/useNativeTransport';
+import AIWorkspaceModal from '../components/AIWorkspaceModal';
+import '../components/AIWorkspace.css';
 import React, { useState, useEffect } from 'react';
 import { Search, Plus, Users, Sparkles } from 'lucide-react';
 import DetailModal from '../components/DetailModal';
@@ -10,6 +13,8 @@ const emptyMember = {
 };
 
 function Members() {
+  const {request,cancel:cancelAI,busy:requestBusy,reviewDialog}=useNativeTransport();
+  const [loadError,setLoadError]=useState('');
   const [members, setMembers] = useState([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
@@ -34,14 +39,14 @@ function Members() {
   };
 
   const fetchMembers = async () => {
-    setLoading(true);
+    setLoading(true);setLoadError('');
     try {
-      const res = await fetch('/api/members', { headers });
+      const res = await request('/api/members', { headers });
       const data = await res.json();
-      const list = Array.isArray(data) ? data : (data.members || data.data || []);
+      const list = nativeList(data);
       setMembers(list);
-    } catch {
-      showToast('Failed to fetch members', 'error');
+    } catch (failure) { setLoadError(failure.message || 'Saved data could not be loaded.');
+
     }
     setLoading(false);
   };
@@ -55,26 +60,26 @@ function Members() {
     try {
       const url = editingId ? `/api/members/${editingId}` : '/api/members';
       const method = editingId ? 'PUT' : 'POST';
-      const res = await fetch(url, { method, headers, body: JSON.stringify(body) });
+      const res = await request(url, { method, headers, body: JSON.stringify(body) });
       if (!res.ok) throw new Error('Failed to save');
       showToast(editingId ? 'Member updated!' : 'Member added!');
       setShowForm(false);
       setEditingId(null);
       setFormData(emptyMember);
       fetchMembers();
-    } catch {
+    } catch (failure) { if(failure.name==='AbortError'){setAiLoading(false);return;}
       showToast('Failed to save member', 'error');
     }
   };
 
   const handleDelete = async (id) => {
     try {
-      await fetch(`/api/members/${id}`, { method: 'DELETE', headers });
+      await request(`/api/members/${id}`, { method: 'DELETE', headers });
       showToast('Member deleted');
       setShowDetail(false);
       setSelected(null);
       fetchMembers();
-    } catch {
+    } catch (failure) { if(failure.name==='AbortError'){setAiLoading(false);return;}
       showToast('Failed to delete', 'error');
     }
   };
@@ -102,12 +107,12 @@ function Members() {
     setAiTitle('AI Engagement Analysis');
     setAiResponse('');
     try {
-      const res = await fetch('/api/members/ai-engagement', {
-        method: 'POST', headers,
+      const res = await request('/api/members/ai-engagement', {
+        method: 'POST', headers,body:JSON.stringify({member_data:members}),
       });
       const data = await res.json();
       setAiResponse(data.analysis || data.response || data.message || data.result || JSON.stringify(data));
-    } catch {
+    } catch (failure) { if(failure.name==='AbortError'){setAiLoading(false);return;}
       setAiResponse('Failed to generate engagement analysis. Please try again.');
     }
     setAiLoading(false);
@@ -124,8 +129,12 @@ function Members() {
 
   if (loading) return <div className="loading-container"><div className="loading-spinner lg" /><p>Loading members...</p></div>;
 
+  if(loadError)return <section role="alert" className="page-container"><h1>Saved members could not be loaded</h1><p>{loadError}</p><button type="button" className="btn btn-secondary" onClick={fetchMembers}>Retry</button></section>;
+
   return (
     <div>
+      {reviewDialog}
+      {requestBusy&&<p role="status">Generating with OpenRouter… <button type="button" className="btn btn-secondary" onClick={cancelAI}>Cancel AI request</button></p>}
       <div className="page-header">
         <div>
           <h1>Member Management</h1>
@@ -148,7 +157,7 @@ function Members() {
         </div>
       </div>
 
-      <AIResponseDisplay response={aiResponse} title={aiTitle} isLoading={aiLoading} />
+      <AIResponseDisplay response={aiResponse} title={aiTitle} isLoading={aiLoading&&!reviewDialog} />
 
       {filtered.length === 0 ? (
         <div className="empty-state">
@@ -205,7 +214,7 @@ function Members() {
           onEdit={() => handleEdit(selected)}
           onDelete={() => handleDelete(selected._id || selected.id)}
         >
-          <div className="detail-view">
+
             <div className="detail-row">
               <div className="detail-field">
                 <span className="field-label">First Name</span>
@@ -258,7 +267,7 @@ function Members() {
               <span className="field-label">Notes</span>
               <span className="field-value">{selected.notes || '-'}</span>
             </div>
-          </div>
+
         </DetailModal>
       )}
 
